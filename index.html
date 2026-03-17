@@ -122,6 +122,88 @@
       text-align: right;
     }
 
+    /* Conflict resolution */
+    .conflicts-wrap {
+      margin-top: 1.5rem;
+      display: none;
+    }
+    .conflicts-wrap.show { display: block; }
+
+    .conflicts-wrap > h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #744210;
+      background: #fefcbf;
+      border: 1px solid #f6e05e;
+      border-radius: 8px;
+      padding: .6rem .9rem;
+      margin-bottom: .75rem;
+    }
+
+    .conflict-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: .75rem;
+    }
+
+    .conflict-card p {
+      font-size: .85rem;
+      color: #718096;
+      margin-bottom: .6rem;
+    }
+
+    .conflict-options { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+    .conflict-options label {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .4rem .75rem;
+      border: 1px solid #cbd5e0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: .9rem;
+      color: #2d3748;
+      transition: border-color .15s, background .15s;
+    }
+
+    .conflict-options label:hover { border-color: #4299e1; background: #ebf8ff; }
+
+    .conflict-options input[type="radio"]:checked + span {
+      font-weight: 600;
+      color: #2b6cb0;
+    }
+
+    .conflict-options label:has(input:checked) {
+      border-color: #4299e1;
+      background: #ebf8ff;
+    }
+
+    .badge {
+      font-size: .75rem;
+      background: #e2e8f0;
+      color: #4a5568;
+      border-radius: 99px;
+      padding: .1rem .45rem;
+    }
+
+    #applyConflictsBtn {
+      display: block;
+      width: 100%;
+      margin-top: .25rem;
+      padding: .7rem;
+      background: #ed8936;
+      color: #fff;
+      font-size: .95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    #applyConflictsBtn:hover { background: #c05621; }
+
     /* Download button */
     #downloadBtn {
       display: none;
@@ -162,6 +244,13 @@
 
   <div class="alert" id="alertBox"></div>
 
+  <!-- Conflict resolution -->
+  <div class="conflicts-wrap" id="conflictsWrap">
+    <h2>⚠ Possible duplicate locations — please review</h2>
+    <div id="conflictCards"></div>
+    <button id="applyConflictsBtn">Apply selections &amp; continue</button>
+  </div>
+
   <!-- Preview -->
   <div class="preview-wrap" id="previewWrap">
     <h2>Preview</h2>
@@ -187,15 +276,19 @@
   const REQUIRED = ["FIRST_NAME", "LAST_NAME", "PHYSICAL_CITY", "PHYSICAL_STATE"];
   const PREVIEW_LIMIT = 50;
 
-  const dropZone    = document.getElementById("dropZone");
-  const csvInput    = document.getElementById("csvInput");
-  const alertBox    = document.getElementById("alertBox");
-  const previewWrap = document.getElementById("previewWrap");
-  const previewBody = document.getElementById("previewBody");
-  const tableFooter = document.getElementById("tableFooter");
-  const downloadBtn = document.getElementById("downloadBtn");
+  const dropZone         = document.getElementById("dropZone");
+  const csvInput         = document.getElementById("csvInput");
+  const alertBox         = document.getElementById("alertBox");
+  const conflictsWrap    = document.getElementById("conflictsWrap");
+  const conflictCards    = document.getElementById("conflictCards");
+  const applyConflictsBtn= document.getElementById("applyConflictsBtn");
+  const previewWrap      = document.getElementById("previewWrap");
+  const previewBody      = document.getElementById("previewBody");
+  const tableFooter      = document.getElementById("tableFooter");
+  const downloadBtn      = document.getElementById("downloadBtn");
 
   let processedRows = [];
+  let pendingRows   = [];
 
   // ── Drag & drop ────────────────────────────────────────────────────────────
   dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
@@ -272,11 +365,111 @@
       a.last.localeCompare(b.last)
     );
 
-    processedRows = rows;
-    renderPreview(rows);
-    showAlert("success", `✓ Loaded ${rows.length} student record${rows.length !== 1 ? "s" : ""}.`);
-    downloadBtn.classList.add("show");
+    const conflicts = detectConflicts(rows);
+    if (conflicts.length) {
+      pendingRows = rows;
+      renderConflicts(conflicts);
+      showAlert("info", `✓ Loaded ${rows.length} records. Found ${conflicts.length} possible duplicate location${conflicts.length > 1 ? "s" : ""} — review below.`);
+    } else {
+      processedRows = rows;
+      renderPreview(rows);
+      showAlert("success", `✓ Loaded ${rows.length} student record${rows.length !== 1 ? "s" : ""}.`);
+      downloadBtn.classList.add("show");
+    }
   }
+
+  // ── Conflict detection ─────────────────────────────────────────────────────
+  function detectConflicts(rows) {
+    // Group by normalized (lowercase) city+state key
+    const groups = new Map();
+    for (const r of rows) {
+      const normKey = r.city.toLowerCase() + "|||" + r.state.toLowerCase();
+      if (!groups.has(normKey)) groups.set(normKey, new Map());
+      const varKey = r.city + "|||" + r.state;
+      const vm = groups.get(normKey);
+      vm.set(varKey, (vm.get(varKey) || 0) + 1);
+    }
+    const conflicts = [];
+    for (const [normKey, vm] of groups) {
+      if (vm.size > 1) {
+        conflicts.push({
+          normKey,
+          variants: [...vm.entries()].map(([vk, count]) => {
+            const [city, state] = vk.split("|||");
+            return { city, state, count };
+          }),
+        });
+      }
+    }
+    return conflicts;
+  }
+
+  function renderConflicts(conflicts) {
+    conflictCards.innerHTML = "";
+    conflicts.forEach((c, ci) => {
+      const card = document.createElement("div");
+      card.className = "conflict-card";
+      const variantHtml = c.variants.map((v, vi) => {
+        const id = `cf_${ci}_${vi}`;
+        // Pre-select the variant with the most students
+        const checked = vi === c.variants.indexOf(c.variants.reduce((a, b) => a.count >= b.count ? a : b)) ? "checked" : "";
+        return `<label>
+          <input type="radio" name="cf_${ci}" id="${id}" value="${esc(v.city)}|||${esc(v.state)}" ${checked}>
+          <span>${esc(v.city)}, ${esc(v.state)}</span>
+          <span class="badge">${v.count} student${v.count !== 1 ? "s" : ""}</span>
+        </label>`;
+      }).join("");
+      // "Keep separate" option
+      const keepId = `cf_${ci}_keep`;
+      card.innerHTML = `<p>These appear to be the same location — which spelling should be used?</p>
+        <div class="conflict-options">
+          ${variantHtml}
+          <label>
+            <input type="radio" name="cf_${ci}" id="${keepId}" value="__keep__">
+            <span>Keep separate</span>
+          </label>
+        </div>`;
+      conflictCards.appendChild(card);
+    });
+    conflictsWrap.classList.add("show");
+  }
+
+  applyConflictsBtn.addEventListener("click", () => {
+    const cards = conflictCards.querySelectorAll(".conflict-card");
+    const resolved = new Map(); // normKey → chosen "City|||State" or "__keep__"
+
+    cards.forEach((card, ci) => {
+      const checked = card.querySelector(`input[name="cf_${ci}"]:checked`);
+      if (!checked) return;
+      // Reconstruct normKey from first radio's value
+      const firstRadio = card.querySelector(`input[type="radio"]`);
+      const [fc, fs] = firstRadio.value.split("|||");
+      const normKey = fc.toLowerCase() + "|||" + fs.toLowerCase();
+      resolved.set(normKey, checked.value);
+    });
+
+    // Apply resolutions to pendingRows
+    const finalRows = pendingRows.map(r => {
+      const normKey = r.city.toLowerCase() + "|||" + r.state.toLowerCase();
+      const choice = resolved.get(normKey);
+      if (!choice || choice === "__keep__") return r;
+      const [newCity, newState] = choice.split("|||");
+      return { ...r, city: newCity, state: newState };
+    });
+
+    // Re-sort after normalization
+    finalRows.sort((a, b) =>
+      a.city.localeCompare(b.city)  ||
+      a.state.localeCompare(b.state)||
+      a.last.localeCompare(b.last)
+    );
+
+    processedRows = finalRows;
+    conflictsWrap.classList.remove("show");
+    renderPreview(finalRows);
+    showAlert("success", `✓ ${finalRows.length} records ready.`);
+    downloadBtn.classList.add("show");
+  });
 
   // ── Preview table ──────────────────────────────────────────────────────────
   function renderPreview(rows) {
@@ -401,10 +594,13 @@
   }
 
   function resetUI() {
+    conflictsWrap.classList.remove("show");
+    conflictCards.innerHTML = "";
     previewWrap.classList.remove("show");
     downloadBtn.classList.remove("show");
     previewBody.innerHTML = "";
     processedRows = [];
+    pendingRows   = [];
   }
 
   function esc(str) {
