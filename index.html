@@ -145,6 +145,27 @@
     .drop-zone p { color: var(--text-soft); font-size: .95rem; }
     .drop-zone p span { color: var(--accent); font-weight: 600; }
 
+    /* Term / year row */
+    .term-row {
+      display: flex;
+      gap: .75rem;
+      margin-bottom: 1rem;
+    }
+    .term-row select, .term-row input[type="text"] {
+      flex: 1;
+      padding: .55rem .75rem;
+      border-radius: 7px;
+      border: 1.5px solid var(--border-mid);
+      background: var(--bg-card);
+      color: var(--text-main);
+      font-size: .95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .term-row select:focus, .term-row input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
     /* Status messages */
     .alert {
       border-radius: 8px;
@@ -318,6 +339,18 @@
     </div>
   </header>
 
+  <!-- Term / Year -->
+  <div class="term-row">
+    <select id="termSelect">
+      <option value="">— Select Term —</option>
+      <option value="Fall Term">Fall Term</option>
+      <option value="Winter Term">Winter Term</option>
+      <option value="Spring Term">Spring Term</option>
+      <option value="Summer Term">Summer Term</option>
+    </select>
+    <input type="text" id="yearInput" placeholder="Year (e.g. 2026)" maxlength="9" />
+  </div>
+
   <!-- Drop zone -->
   <div class="drop-zone" id="dropZone">
     <label for="csvInput" style="cursor:pointer; display:block;">
@@ -373,6 +406,8 @@
   const REQUIRED = ["FIRST_NAME", "LAST_NAME", "PHYSICAL_CITY", "PHYSICAL_STATE"];
   const PREVIEW_LIMIT = 50;
 
+  const termSelect       = document.getElementById("termSelect");
+  const yearInput        = document.getElementById("yearInput");
   const dropZone         = document.getElementById("dropZone");
   const csvInput         = document.getElementById("csvInput");
   const alertBox         = document.getElementById("alertBox");
@@ -598,6 +633,15 @@
     });
   });
 
+  function termLabel() {
+    const t = termSelect.value.trim();
+    const y = yearInput.value.trim();
+    if (t && y) return `${t} ${y}`;
+    if (t) return t;
+    if (y) return y;
+    return "Honor_Roll";
+  }
+
   function xmlEsc(str) {
     return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
               .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
@@ -687,7 +731,7 @@
     const url = URL.createObjectURL(blob);
     const a   = document.createElement("a");
     a.href     = url;
-    a.download = "Honor_Roll_Final.docx";
+    a.download = termLabel().replace(/\s+/g, "_") + ".docx";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -728,7 +772,7 @@
       y += lines.length * 15;
     }
 
-    doc.save("Honor_Roll_Final.pdf");
+    doc.save(termLabel().replace(/\s+/g, "_") + ".pdf");
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
