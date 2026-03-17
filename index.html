@@ -225,21 +225,29 @@
   }
 
   function processCSV(rawRows) {
-    // Skip first 2 metadata rows; row index 2 = header
-    if (rawRows.length < 3) {
-      showAlert("error", "CSV has too few rows (need at least 2 metadata rows + header + data).");
+    if (rawRows.length < 2) {
+      showAlert("error", "CSV has too few rows.");
       return;
     }
 
-    const headerRow = rawRows[2].map(h => h.trim());
-    const dataRows  = rawRows.slice(3);
+    // Find the header row by scanning for whichever row contains the required columns
+    let headerIndex = -1;
+    let headerRow   = [];
+    for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
+      const candidate = rawRows[i].map(h => (h || "").trim());
+      if (REQUIRED.every(col => candidate.includes(col))) {
+        headerIndex = i;
+        headerRow   = candidate;
+        break;
+      }
+    }
 
-    // Validate required columns
-    const missing = REQUIRED.filter(col => !headerRow.includes(col));
-    if (missing.length) {
-      showAlert("error", "Missing required columns: " + missing.join(", "));
+    if (headerIndex === -1) {
+      showAlert("error", "Missing required columns: " + REQUIRED.join(", "));
       return;
     }
+
+    const dataRows = rawRows.slice(headerIndex + 1);
 
     const idx = col => headerRow.indexOf(col);
 
