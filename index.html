@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Honor Roll Protocol</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.10);
+      padding: 2.5rem 2rem;
+      max-width: 680px;
+      width: 100%;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 1.75rem;
+    }
+
+    header .icon { font-size: 2rem; }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #1a202c;
+    }
+
+    header p {
+      font-size: .9rem;
+      color: #718096;
+      margin-top: .2rem;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #cbd5e0;
+      border-radius: 10px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #4299e1;
+      background: #ebf8ff;
+    }
+
+    .drop-zone input[type="file"] { display: none; }
+
+    .drop-zone .upload-icon {
+      font-size: 2.5rem;
+      margin-bottom: .75rem;
+      display: block;
+    }
+
+    .drop-zone p { color: #4a5568; font-size: .95rem; }
+    .drop-zone p span { color: #4299e1; font-weight: 600; }
+
+    /* Status messages */
+    .alert {
+      border-radius: 8px;
+      padding: .85rem 1rem;
+      margin-top: 1.25rem;
+      font-size: .9rem;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert.error  { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
+    .alert.success{ background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+    .alert.info   { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
+
+    /* Preview table */
+    .preview-wrap {
+      margin-top: 1.5rem;
+      display: none;
+      overflow-x: auto;
+    }
+    .preview-wrap.show { display: block; }
+
+    .preview-wrap h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #2d3748;
+      margin-bottom: .6rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .875rem;
+    }
+
+    thead { background: #edf2f7; }
+    th, td { padding: .5rem .75rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { font-weight: 600; color: #4a5568; }
+    td { color: #2d3748; }
+    tbody tr:last-child td { border-bottom: none; }
+
+    .table-footer {
+      font-size: .8rem;
+      color: #718096;
+      margin-top: .5rem;
+      text-align: right;
+    }
+
+    /* Download button */
+    #downloadBtn {
+      display: none;
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: .85rem;
+      background: #4299e1;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    #downloadBtn:hover { background: #2b6cb0; }
+    #downloadBtn.show { display: block; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <header>
+    <span class="icon">🎓</span>
+    <div>
+      <h1>Honor Roll Protocol</h1>
+      <p>Upload a student CSV to generate a formatted Word document.</p>
+    </div>
+  </header>
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <label for="csvInput" style="cursor:pointer; display:block;">
+      <span class="upload-icon">📂</span>
+      <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
+      <input type="file" id="csvInput" accept=".csv" />
+    </label>
+  </div>
+
+  <div class="alert" id="alertBox"></div>
+
+  <!-- Preview -->
+  <div class="preview-wrap" id="previewWrap">
+    <h2>Preview</h2>
+    <table id="previewTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Full Name</th>
+          <th>City</th>
+          <th>State</th>
+        </tr>
+      </thead>
+      <tbody id="previewBody"></tbody>
+    </table>
+    <p class="table-footer" id="tableFooter"></p>
+  </div>
+
+  <button id="downloadBtn">⬇ Download Honor_Roll_Final.docx</button>
+</div>
+
+<script>
+(function () {
+  const REQUIRED = ["FIRST_NAME", "LAST_NAME", "PHYSICAL_CITY", "PHYSICAL_STATE"];
+  const PREVIEW_LIMIT = 50;
+
+  const dropZone    = document.getElementById("dropZone");
+  const csvInput    = document.getElementById("csvInput");
+  const alertBox    = document.getElementById("alertBox");
+  const previewWrap = document.getElementById("previewWrap");
+  const previewBody = document.getElementById("previewBody");
+  const tableFooter = document.getElementById("tableFooter");
+  const downloadBtn = document.getElementById("downloadBtn");
+
+  let processedRows = [];
+
+  // ── Drag & drop ────────────────────────────────────────────────────────────
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+  csvInput.addEventListener("change", e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+  // ── File handling ──────────────────────────────────────────────────────────
+  function handleFile(file) {
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      showAlert("error", "Please upload a .csv file.");
+      return;
+    }
+    showAlert("info", "Parsing CSV…");
+    resetUI();
+
+    Papa.parse(file, {
+      skipEmptyLines: true,
+      complete: result => processCSV(result.data),
+      error: err => showAlert("error", "Failed to parse CSV: " + err.message)
+    });
+  }
+
+  function processCSV(rawRows) {
+    // Skip first 2 metadata rows; row index 2 = header
+    if (rawRows.length < 3) {
+      showAlert("error", "CSV has too few rows (need at least 2 metadata rows + header + data).");
+      return;
+    }
+
+    const headerRow = rawRows[2].map(h => h.trim());
+    const dataRows  = rawRows.slice(3);
+
+    // Validate required columns
+    const missing = REQUIRED.filter(col => !headerRow.includes(col));
+    if (missing.length) {
+      showAlert("error", "Missing required columns: " + missing.join(", "));
+      return;
+    }
+
+    const idx = col => headerRow.indexOf(col);
+
+    const rows = dataRows
+      .map(r => ({
+        first : (r[idx("FIRST_NAME")]    || "").trim(),
+        last  : (r[idx("LAST_NAME")]     || "").trim(),
+        city  : (r[idx("PHYSICAL_CITY")] || "").trim(),
+        state : (r[idx("PHYSICAL_STATE")]|| "").trim(),
+      }))
+      .filter(r => r.first && r.last && r.city && r.state);
+
+    if (!rows.length) {
+      showAlert("error", "No valid student records found after cleaning the data.");
+      return;
+    }
+
+    // Sort: city → state → last name
+    rows.sort((a, b) =>
+      a.city.localeCompare(b.city)  ||
+      a.state.localeCompare(b.state)||
+      a.last.localeCompare(b.last)
+    );
+
+    processedRows = rows;
+    renderPreview(rows);
+    showAlert("success", `✓ Loaded ${rows.length} student record${rows.length !== 1 ? "s" : ""}.`);
+    downloadBtn.classList.add("show");
+  }
+
+  // ── Preview table ──────────────────────────────────────────────────────────
+  function renderPreview(rows) {
+    previewBody.innerHTML = "";
+    const shown = rows.slice(0, PREVIEW_LIMIT);
+    shown.forEach((r, i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${i + 1}</td><td>${esc(r.first + " " + r.last)}</td><td>${esc(r.city)}</td><td>${esc(r.state)}</td>`;
+      previewBody.appendChild(tr);
+    });
+    tableFooter.textContent = rows.length > PREVIEW_LIMIT
+      ? `Showing first ${PREVIEW_LIMIT} of ${rows.length} records.`
+      : `${rows.length} record${rows.length !== 1 ? "s" : ""} total.`;
+    previewWrap.classList.add("show");
+  }
+
+  // ── Download ───────────────────────────────────────────────────────────────
+  downloadBtn.addEventListener("click", () => generateDocx(processedRows));
+
+  async function generateDocx(rows) {
+    const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType } = docx;
+
+    const children = [];
+    let currentLoc = null;
+
+    for (const r of rows) {
+      const loc = `${r.city}, ${r.state}`;
+      if (loc !== currentLoc) {
+        children.push(
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            children: [new TextRun({ text: loc, bold: true })],
+          })
+        );
+        currentLoc = loc;
+      }
+      children.push(
+        new Paragraph({
+          style: "ListParagraph",
+          bullet: { level: 0 },
+          children: [new TextRun(`${r.first} ${r.last}`)],
+        })
+      );
+    }
+
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await docx.Packer.toBlob(doc);
+
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement("a");
+    a.href     = url;
+    a.download = "Honor_Roll_Final.docx";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function showAlert(type, msg) {
+    alertBox.className = `alert ${type} show`;
+    alertBox.textContent = msg;
+  }
+
+  function resetUI() {
+    previewWrap.classList.remove("show");
+    downloadBtn.classList.remove("show");
+    previewBody.innerHTML = "";
+    processedRows = [];
+  }
+
+  function esc(str) {
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+})();
+</script>
+</body>
+</html>
