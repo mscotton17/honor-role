@@ -700,14 +700,14 @@
         `<w:p><w:pPr><w:jc w:val="center"/>${pSpacing()}</w:pPr>` +
         `<w:r>${rPr()}` +
           `<w:drawing><wp:inline xmlns:wp="${WP}" distT="114300" distB="114300" distL="114300" distR="114300">` +
-            `<wp:extent cx="2857500" cy="496957"/>` +
+            `<wp:extent cx="2857500" cy="844960"/>` +
             `<wp:effectExtent b="0" l="0" r="0" t="0"/>` +
             `<wp:docPr id="1" name="logo.png"/>` +
             `<a:graphic xmlns:a="${A}"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
               `<pic:pic xmlns:pic="${PIC}">` +
                 `<pic:nvPicPr><pic:cNvPr id="0" name="logo.png"/><pic:cNvPicPr preferRelativeResize="0"/></pic:nvPicPr>` +
                 `<pic:blipFill><a:blip r:embed="rId6" xmlns:r="${R}"/><a:srcRect b="0" l="0" r="0" t="0"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-                `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2857500" cy="496957"/></a:xfrm><a:prstGeom prst="rect"/><a:ln/></pic:spPr>` +
+                `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2857500" cy="844960"/></a:xfrm><a:prstGeom prst="rect"/><a:ln/></pic:spPr>` +
               `</pic:pic>` +
             `</a:graphicData></a:graphic>` +
           `</wp:inline></w:drawing>` +
@@ -875,7 +875,7 @@
 
     // Logo (centered, ~3 inches wide, proportional height)
     const logoW = 216, logoH = 64;
-    doc.addImage("data:image/png;base64," + LOGO_BASE64, "PNG",
+    doc.addImage(LOGO_BASE64, "PNG",
       (pageW - logoW) / 2, y, logoW, logoH);
     y += logoH + 10;
 
@@ -887,7 +887,7 @@
     doc.text("Media Contact: Matt Scotton", marginL, y);
     y += 15;
     doc.text("541-514-1054", marginL, y);
-    y += 10;
+    y += 22;
 
     // Headline
     const termFull = termLabel();
