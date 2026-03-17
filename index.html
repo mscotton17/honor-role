@@ -294,10 +294,32 @@
   }
 
   // ── Download ───────────────────────────────────────────────────────────────
-  downloadBtn.addEventListener("click", () => generateDocx(processedRows));
+  downloadBtn.addEventListener("click", () => {
+    generateDocx(processedRows).catch(err => {
+      showAlert("error", "Failed to generate document: " + err.message);
+    });
+  });
 
   async function generateDocx(rows) {
-    const { Document, Paragraph, TextRun, HeadingLevel, AlignmentType } = docx;
+    const { Document, Paragraph, TextRun, HeadingLevel, NumberingConfig,
+            AlignmentType, convertInchesToTwip } = docx;
+
+    // Set up a simple bullet numbering definition
+    const bulletRef = "honor-roll-bullets";
+    const numbering = {
+      config: [{
+        reference: bulletRef,
+        levels: [{
+          level: 0,
+          format: "bullet",
+          text: "\u2022",
+          alignment: AlignmentType.LEFT,
+          style: {
+            paragraph: { indent: { left: convertInchesToTwip(0.5), hanging: convertInchesToTwip(0.25) } },
+          },
+        }],
+      }],
+    };
 
     const children = [];
     let currentLoc = null;
@@ -315,14 +337,13 @@
       }
       children.push(
         new Paragraph({
-          style: "ListParagraph",
-          bullet: { level: 0 },
+          numbering: { reference: bulletRef, level: 0 },
           children: [new TextRun(`${r.first} ${r.last}`)],
         })
       );
     }
 
-    const doc = new Document({ sections: [{ children }] });
+    const doc = new Document({ numbering, sections: [{ children }] });
     const blob = await docx.Packer.toBlob(doc);
 
     const url = URL.createObjectURL(blob);
