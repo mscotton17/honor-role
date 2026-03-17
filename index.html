@@ -6,6 +6,7 @@
   <title>Honor Roll Protocol</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     /* ── Theme tokens ───────────────────────────────────────────────────────── */
     :root, [data-theme="light"] {
@@ -279,13 +280,17 @@
     }
     #applyConflictsBtn:hover { background: #c05621; }
 
-    /* Download button */
-    #downloadBtn {
+    /* Download buttons */
+    .download-row {
       display: none;
       margin-top: 1.5rem;
-      width: 100%;
+      gap: .75rem;
+    }
+    .download-row.show { display: flex; }
+
+    .download-row button {
+      flex: 1;
       padding: .85rem;
-      background: var(--accent);
       color: #fff;
       font-size: 1rem;
       font-weight: 600;
@@ -294,8 +299,12 @@
       cursor: pointer;
       transition: background .2s;
     }
-    #downloadBtn:hover { background: var(--accent-dark); }
-    #downloadBtn.show { display: block; }
+
+    #downloadDocx { background: var(--accent); }
+    #downloadDocx:hover { background: var(--accent-dark); }
+
+    #downloadPdf { background: #48bb78; }
+    #downloadPdf:hover { background: #2f855a; }
   </style>
 </head>
 <body>
@@ -327,7 +336,10 @@
     <button id="applyConflictsBtn">Apply selections &amp; continue</button>
   </div>
 
-  <button id="downloadBtn">⬇ Download Honor_Roll_Final.docx</button>
+  <div class="download-row" id="downloadRow">
+    <button id="downloadDocx">⬇ Download .docx</button>
+    <button id="downloadPdf">⬇ Download .pdf</button>
+  </div>
 
   <!-- Preview -->
   <div class="preview-wrap" id="previewWrap">
@@ -370,7 +382,9 @@
   const previewWrap      = document.getElementById("previewWrap");
   const previewBody      = document.getElementById("previewBody");
   const tableFooter      = document.getElementById("tableFooter");
-  const downloadBtn      = document.getElementById("downloadBtn");
+  const downloadRow      = document.getElementById("downloadRow");
+  const downloadDocx     = document.getElementById("downloadDocx");
+  const downloadPdf      = document.getElementById("downloadPdf");
 
   let processedRows = [];
   let pendingRows   = [];
@@ -459,7 +473,7 @@
       processedRows = rows;
       renderPreview(rows);
       showAlert("success", `✓ Loaded ${rows.length} student record${rows.length !== 1 ? "s" : ""}.`);
-      downloadBtn.classList.add("show");
+      downloadRow.classList.add("show");
     }
   }
 
@@ -553,7 +567,7 @@
     conflictsWrap.classList.remove("show");
     renderPreview(finalRows);
     showAlert("success", `✓ ${finalRows.length} records ready.`);
-    downloadBtn.classList.add("show");
+    downloadRow.classList.add("show");
   });
 
   // ── Preview table ──────────────────────────────────────────────────────────
@@ -572,9 +586,15 @@
   }
 
   // ── Download ───────────────────────────────────────────────────────────────
-  downloadBtn.addEventListener("click", () => {
+  downloadDocx.addEventListener("click", () => {
     generateDocx(processedRows).catch(err => {
-      showAlert("error", "Failed to generate document: " + err.message);
+      showAlert("error", "Failed to generate .docx: " + err.message);
+    });
+  });
+
+  downloadPdf.addEventListener("click", () => {
+    generatePdf(processedRows).catch(err => {
+      showAlert("error", "Failed to generate .pdf: " + err.message);
     });
   });
 
@@ -672,6 +692,45 @@
     URL.revokeObjectURL(url);
   }
 
+  // ── PDF generation ────────────────────────────────────────────────────────
+  async function generatePdf(rows) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+    const marginL = 56, marginR = 56, marginT = 56;
+    const pageW   = doc.internal.pageSize.getWidth();
+    const pageH   = doc.internal.pageSize.getHeight();
+    const maxW    = pageW - marginL - marginR;
+    let y = marginT;
+
+    function checkPageBreak(needed) {
+      if (y + needed > pageH - 40) { doc.addPage(); y = marginT; }
+    }
+
+    let currentLoc = null;
+    for (const r of rows) {
+      const loc = `${r.city}, ${r.state}`;
+      if (loc !== currentLoc) {
+        checkPageBreak(28);
+        if (currentLoc !== null) y += 6; // extra spacing between sections
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.text(loc, marginL, y);
+        y += 20;
+        currentLoc = loc;
+      }
+      checkPageBreak(16);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const name = `\u2022  ${r.first} ${r.last}`;
+      const lines = doc.splitTextToSize(name, maxW - 12);
+      doc.text(lines, marginL + 12, y);
+      y += lines.length * 15;
+    }
+
+    doc.save("Honor_Roll_Final.pdf");
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   function showAlert(type, msg) {
     alertBox.className = `alert ${type} show`;
@@ -682,7 +741,7 @@
     conflictsWrap.classList.remove("show");
     conflictCards.innerHTML = "";
     previewWrap.classList.remove("show");
-    downloadBtn.classList.remove("show");
+    downloadRow.classList.remove("show");
     previewBody.innerHTML = "";
     processedRows = [];
     pendingRows   = [];
