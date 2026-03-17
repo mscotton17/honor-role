@@ -767,6 +767,9 @@
     for (const r of rows) {
       const loc = `${r.city}, ${r.state}`;
       if (loc !== currentLoc) {
+        if (currentLoc !== null) {
+          bodyXml += `<w:p><w:pPr>${pSpacing()}</w:pPr><w:r>${rPr()}</w:r></w:p>`;
+        }
         bodyXml +=
           `<w:p><w:pPr>${pSpacing()}</w:pPr>` +
             `<w:r>${rPr(`<w:b/><w:bCs/>`)}<w:t>${xmlEsc(loc)}</w:t></w:r>` +
@@ -924,7 +927,7 @@
       const loc = `${r.city}, ${r.state}`;
       if (loc !== currentLoc) {
         checkPageBreak(28);
-        if (currentLoc !== null) y += 4;
+        if (currentLoc !== null) y += 14;
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.text(loc, marginL, y);
