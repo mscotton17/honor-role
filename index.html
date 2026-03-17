@@ -285,6 +285,22 @@
       padding: .1rem .45rem;
     }
 
+    #applyNamesBtn {
+      display: block;
+      width: 100%;
+      margin-top: .25rem;
+      padding: .7rem;
+      background: #ed8936;
+      color: #fff;
+      font-size: .95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    #applyNamesBtn:hover { background: #c05621; }
+
     #applyConflictsBtn {
       display: block;
       width: 100%;
@@ -369,6 +385,13 @@
     <button id="applyConflictsBtn">Apply selections &amp; continue</button>
   </div>
 
+  <!-- Name casing review -->
+  <div class="conflicts-wrap" id="namesWrap">
+    <h2>⚠ Some names may not be in title case — please review</h2>
+    <div id="nameCards"></div>
+    <button id="applyNamesBtn">Apply selections &amp; continue</button>
+  </div>
+
   <div class="download-row" id="downloadRow">
     <button id="downloadDocx">⬇ Download .docx</button>
     <button id="downloadPdf">⬇ Download .pdf</button>
@@ -416,6 +439,9 @@
   const conflictsWrap    = document.getElementById("conflictsWrap");
   const conflictCards    = document.getElementById("conflictCards");
   const applyConflictsBtn= document.getElementById("applyConflictsBtn");
+  const namesWrap        = document.getElementById("namesWrap");
+  const nameCards        = document.getElementById("nameCards");
+  const applyNamesBtn    = document.getElementById("applyNamesBtn");
   const previewWrap      = document.getElementById("previewWrap");
   const previewBody      = document.getElementById("previewBody");
   const tableFooter      = document.getElementById("tableFooter");
@@ -515,10 +541,7 @@
       renderConflicts(conflicts);
       showAlert("info", `✓ Loaded ${rows.length} records. Found ${conflicts.length} possible duplicate location${conflicts.length > 1 ? "s" : ""} — review below.`);
     } else {
-      processedRows = rows;
-      renderPreview(rows);
-      showAlert("success", `✓ Loaded ${rows.length} student record${rows.length !== 1 ? "s" : ""}.`);
-      downloadRow.classList.add("show");
+      checkNamesAndFinalize(rows);
     }
   }
 
@@ -608,12 +631,80 @@
       a.last.localeCompare(b.last)
     );
 
-    processedRows = finalRows;
     conflictsWrap.classList.remove("show");
-    renderPreview(finalRows);
-    showAlert("success", `✓ ${finalRows.length} records ready.`);
-    downloadRow.classList.add("show");
+    checkNamesAndFinalize(finalRows);
   });
+
+  // ── Name casing review ────────────────────────────────────────────────────
+  function isTitleCase(str) {
+    return str.trim().split(/\s+/).every(word => {
+      if (word.length <= 2) return true;
+      return /^[A-Z][^A-Z]/.test(word);
+    });
+  }
+
+  function toTitleCase(str) {
+    return str.trim().split(/\s+/).map(word =>
+      word.length === 0 ? word : word[0].toUpperCase() + word.slice(1).toLowerCase()
+    ).join(" ");
+  }
+
+  function checkNamesAndFinalize(rows) {
+    const flagged = rows
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => !isTitleCase(r.first) || !isTitleCase(r.last));
+    if (flagged.length) {
+      pendingRows = rows;
+      renderNameReview(flagged);
+      showAlert("info", `Found ${flagged.length} name${flagged.length !== 1 ? "s" : ""} that may not be in title case — review below.`);
+    } else {
+      finalizeRows(rows);
+    }
+  }
+
+  function renderNameReview(flagged) {
+    nameCards.innerHTML = "";
+    flagged.forEach(({ r, i }, fi) => {
+      const sugFirst = toTitleCase(r.first);
+      const sugLast  = toTitleCase(r.last);
+      const card = document.createElement("div");
+      card.className = "conflict-card";
+      card.dataset.rowIndex = i;
+      card.innerHTML =
+        `<p>Original: <strong>${esc(r.first)} ${esc(r.last)}</strong></p>` +
+        `<div class="conflict-options">` +
+          `<label><input type="radio" name="nm_${fi}" value="suggested" checked>` +
+            `<span>${esc(sugFirst)} ${esc(sugLast)}</span>` +
+            `<span class="badge">suggested</span></label>` +
+          `<label><input type="radio" name="nm_${fi}" value="original">` +
+            `<span>${esc(r.first)} ${esc(r.last)}</span>` +
+            `<span class="badge">keep original</span></label>` +
+        `</div>`;
+      nameCards.appendChild(card);
+    });
+    namesWrap.classList.add("show");
+  }
+
+  applyNamesBtn.addEventListener("click", () => {
+    const cards = nameCards.querySelectorAll(".conflict-card");
+    const finalRows = [...pendingRows];
+    cards.forEach((card, fi) => {
+      const checked = card.querySelector(`input[name="nm_${fi}"]:checked`);
+      if (!checked || checked.value === "original") return;
+      const idx = parseInt(card.dataset.rowIndex);
+      const r = finalRows[idx];
+      finalRows[idx] = { ...r, first: toTitleCase(r.first), last: toTitleCase(r.last) };
+    });
+    namesWrap.classList.remove("show");
+    finalizeRows(finalRows);
+  });
+
+  function finalizeRows(rows) {
+    processedRows = rows;
+    renderPreview(rows);
+    showAlert("success", `✓ ${rows.length} record${rows.length !== 1 ? "s" : ""} ready.`);
+    downloadRow.classList.add("show");
+  }
 
   // ── Preview table ──────────────────────────────────────────────────────────
   function renderPreview(rows) {
@@ -953,6 +1044,8 @@
   function resetUI() {
     conflictsWrap.classList.remove("show");
     conflictCards.innerHTML = "";
+    namesWrap.classList.remove("show");
+    nameCards.innerHTML = "";
     previewWrap.classList.remove("show");
     downloadRow.classList.remove("show");
     previewBody.innerHTML = "";
