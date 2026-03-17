@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Honor Roll Protocol</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -300,51 +300,91 @@
     });
   });
 
+  function xmlEsc(str) {
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+              .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+  }
+
   async function generateDocx(rows) {
-    const { Document, Paragraph, TextRun, HeadingLevel, NumberingConfig,
-            AlignmentType, convertInchesToTwip } = docx;
-
-    // Set up a simple bullet numbering definition
-    const bulletRef = "honor-roll-bullets";
-    const numbering = {
-      config: [{
-        reference: bulletRef,
-        levels: [{
-          level: 0,
-          format: "bullet",
-          text: "\u2022",
-          alignment: AlignmentType.LEFT,
-          style: {
-            paragraph: { indent: { left: convertInchesToTwip(0.5), hanging: convertInchesToTwip(0.25) } },
-          },
-        }],
-      }],
-    };
-
-    const children = [];
+    // Build body paragraphs as raw OOXML
+    let bodyXml = "";
     let currentLoc = null;
 
     for (const r of rows) {
       const loc = `${r.city}, ${r.state}`;
       if (loc !== currentLoc) {
-        children.push(
-          new Paragraph({
-            heading: HeadingLevel.HEADING_2,
-            children: [new TextRun({ text: loc, bold: true })],
-          })
-        );
+        bodyXml += `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr>` +
+                   `<w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEsc(loc)}</w:t></w:r></w:p>`;
         currentLoc = loc;
       }
-      children.push(
-        new Paragraph({
-          numbering: { reference: bulletRef, level: 0 },
-          children: [new TextRun(`${r.first} ${r.last}`)],
-        })
-      );
+      bodyXml += `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` +
+                 `<w:r><w:t>${xmlEsc(r.first + " " + r.last)}</w:t></w:r></w:p>`;
     }
 
-    const doc = new Document({ numbering, sections: [{ children }] });
-    const blob = await docx.Packer.toBlob(doc);
+    const WML = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="${WML}"><w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
+
+    const stylesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:styles xmlns:w="${WML}">` +
+        `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="Heading2">` +
+          `<w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>` +
+          `<w:pPr><w:outlineLvl w:val="1"/></w:pPr>` +
+          `<w:rPr><w:b/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr>` +
+        `</w:style>` +
+      `</w:styles>`;
+
+    const numberingXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:numbering xmlns:w="${WML}">` +
+        `<w:abstractNum w:abstractNumId="0">` +
+          `<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>` +
+            `<w:lvlText w:val="&#x2022;"/><w:lvlJc w:val="left"/>` +
+            `<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>` +
+          `</w:lvl>` +
+        `</w:abstractNum>` +
+        `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>` +
+      `</w:numbering>`;
+
+    const contentTypesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+        `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+        `<Default Extension="xml" ContentType="application/xml"/>` +
+        `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+        `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>` +
+        `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` +
+      `</Types>`;
+
+    const relsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+      `</Relationships>`;
+
+    const wordRelsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+        `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>` +
+      `</Relationships>`;
+
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", contentTypesXml);
+    zip.file("_rels/.rels", relsXml);
+    zip.file("word/document.xml", documentXml);
+    zip.file("word/styles.xml", stylesXml);
+    zip.file("word/numbering.xml", numberingXml);
+    zip.file("word/_rels/document.xml.rels", wordRelsXml);
+
+    const blob = await zip.generateAsync({
+      type: "blob",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
 
     const url = URL.createObjectURL(blob);
     const a   = document.createElement("a");
