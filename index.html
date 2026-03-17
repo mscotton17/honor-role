@@ -650,41 +650,154 @@
     return "Honor_Roll";
   }
 
+  function termLower() {
+    return termSelect.value.trim().toLowerCase();
+  }
+
+  function termDateRange() {
+    const term = termSelect.value.trim().toLowerCase();
+    const year = yearInput.value.trim();
+    if (term.startsWith("fall"))   return `September ${year} to December ${year}`;
+    if (term.startsWith("winter")) return `January ${year} to March ${year}`;
+    if (term.startsWith("spring")) return `March ${year} to June ${year}`;
+    if (term.startsWith("summer")) return `June ${year} to August ${year}`;
+    return "";
+  }
+
   function xmlEsc(str) {
     return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
               .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
   }
 
   async function generateDocx(rows) {
-    // Build body paragraphs as raw OOXML
-    let bodyXml = "";
-    let currentLoc = null;
+    const WML  = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const WP   = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+    const A    = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const PIC  = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+    const R    = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
+    const termFull  = termLabel();
+    const termLow   = termLower();
+    const dateRange = termDateRange();
+
+    function rPr(extra = "") {
+      return `<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>${extra}</w:rPr>`;
+    }
+    function pSpacing() {
+      return `<w:spacing w:line="240" w:lineRule="auto"/>`;
+    }
+
+    // Fetch logo as base64
+    let logoBase64 = null;
+    try {
+      const resp = await fetch("LBCC-horizontal-logo-full-color-cmyk.png");
+      if (resp.ok) {
+        const buf = await resp.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        logoBase64 = btoa(bin);
+      }
+    } catch (_) {}
+
+    let bodyXml = "";
+
+    // Logo (centered)
+    if (logoBase64) {
+      bodyXml +=
+        `<w:p><w:pPr><w:jc w:val="center"/>${pSpacing()}</w:pPr>` +
+        `<w:r>${rPr()}` +
+          `<w:drawing><wp:inline xmlns:wp="${WP}" distT="114300" distB="114300" distL="114300" distR="114300">` +
+            `<wp:extent cx="2857500" cy="496957"/>` +
+            `<wp:effectExtent b="0" l="0" r="0" t="0"/>` +
+            `<wp:docPr id="1" name="logo.png"/>` +
+            `<a:graphic xmlns:a="${A}"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+              `<pic:pic xmlns:pic="${PIC}">` +
+                `<pic:nvPicPr><pic:cNvPr id="0" name="logo.png"/><pic:cNvPicPr preferRelativeResize="0"/></pic:nvPicPr>` +
+                `<pic:blipFill><a:blip r:embed="rId6" xmlns:r="${R}"/><a:srcRect b="0" l="0" r="0" t="0"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+                `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2857500" cy="496957"/></a:xfrm><a:prstGeom prst="rect"/><a:ln/></pic:spPr>` +
+              `</pic:pic>` +
+            `</a:graphicData></a:graphic>` +
+          `</wp:inline></w:drawing>` +
+        `</w:r></w:p>`;
+    }
+
+    // Blank line after logo
+    bodyXml += `<w:p><w:pPr>${pSpacing()}</w:pPr><w:r>${rPr()}</w:r></w:p>`;
+
+    // Contact block
+    bodyXml +=
+      `<w:p><w:pPr>${pSpacing()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t xml:space="preserve">FOR IMMEDIATE RELEASE</w:t><w:br w:type="textWrapping"/>` +
+        `<w:t>Media Contact: Matt Scotton</w:t></w:r>` +
+      `</w:p>`;
+
+    bodyXml +=
+      `<w:p><w:pPr>${pSpacing()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t>541-514-1054</w:t></w:r>` +
+      `</w:p>`;
+
+    // Blank line
+    bodyXml += `<w:p><w:pPr>${pSpacing()}</w:pPr><w:r>${rPr()}</w:r></w:p>`;
+
+    // Headline (centered, bold, 20pt)
+    bodyXml +=
+      `<w:p><w:pPr>${pSpacing()}<w:jc w:val="center"/></w:pPr>` +
+        `<w:r>${rPr(`<w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/>`)}<w:t xml:space="preserve">Linn-Benton Community College Congratulates ${xmlEsc(termFull)} Honor Roll Students</w:t></w:r>` +
+      `</w:p>`;
+
+    // Blank line
+    bodyXml += `<w:p><w:pPr>${pSpacing()}</w:pPr><w:r>${rPr()}</w:r></w:p>`;
+
+    // Opening paragraph
+    const openingSentence = dateRange
+      ? `Congratulations to the following students at Linn-Benton Community College who earned a grade point average of 3.5 or higher for 12 or more graded credits during ${xmlEsc(termLow)}, ${xmlEsc(dateRange)}. These do not include pass/no pass or incomplete credits.`
+      : `Congratulations to the following students at Linn-Benton Community College who earned a grade point average of 3.5 or higher for 12 or more graded credits during ${xmlEsc(termLow)}. These do not include pass/no pass or incomplete credits.`;
+
+    bodyXml +=
+      `<w:p><w:pPr>${pSpacing()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t xml:space="preserve">ALBANY, Ore. &#x2013; ${openingSentence}</w:t></w:r>` +
+      `</w:p>`;
+
+    // Blank line
+    bodyXml += `<w:p><w:pPr>${pSpacing()}</w:pPr><w:r>${rPr()}</w:r></w:p>`;
+
+    // Student list grouped by city/state
+    let currentLoc = null;
     for (const r of rows) {
       const loc = `${r.city}, ${r.state}`;
       if (loc !== currentLoc) {
-        bodyXml += `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr>` +
-                   `<w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEsc(loc)}</w:t></w:r></w:p>`;
+        bodyXml +=
+          `<w:p><w:pPr>${pSpacing()}</w:pPr>` +
+            `<w:r>${rPr(`<w:b/><w:bCs/>`)}<w:t>${xmlEsc(loc)}</w:t></w:r>` +
+          `</w:p>`;
         currentLoc = loc;
       }
-      bodyXml += `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` +
-                 `<w:r><w:t>${xmlEsc(r.first + " " + r.last)}</w:t></w:r></w:p>`;
+      bodyXml +=
+        `<w:p><w:pPr>` +
+          `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>` +
+          `${pSpacing()}<w:ind w:left="720" w:hanging="360"/>` +
+        `</w:pPr>` +
+          `<w:r>${rPr()}<w:t>${xmlEsc(r.first + " " + r.last)}</w:t></w:r>` +
+        `</w:p>`;
     }
 
-    const WML = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    bodyXml += `<w:sectPr/>`;
+
+    const hasLogo = !!logoBase64;
 
     const documentXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:document xmlns:w="${WML}"><w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
+      `<w:document xmlns:w="${WML}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+        `<w:body>${bodyXml}</w:body>` +
+      `</w:document>`;
 
     const stylesXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:styles xmlns:w="${WML}">` +
-        `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
-        `<w:style w:type="paragraph" w:styleId="Heading2">` +
-          `<w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>` +
-          `<w:pPr><w:outlineLvl w:val="1"/></w:pPr>` +
-          `<w:rPr><w:b/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr>` +
+        `<w:style w:type="paragraph" w:default="1" w:styleId="Normal">` +
+          `<w:name w:val="Normal"/>` +
+          `<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
         `</w:style>` +
       `</w:styles>`;
 
@@ -695,6 +808,7 @@
           `<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>` +
             `<w:lvlText w:val="&#x2022;"/><w:lvlJc w:val="left"/>` +
             `<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>` +
+            `<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:cs="Symbol"/></w:rPr>` +
           `</w:lvl>` +
         `</w:abstractNum>` +
         `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>` +
@@ -705,6 +819,7 @@
       `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
         `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
         `<Default Extension="xml" ContentType="application/xml"/>` +
+        (hasLogo ? `<Default Extension="png" ContentType="image/png"/>` : "") +
         `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
         `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>` +
         `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` +
@@ -721,6 +836,7 @@
       `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
         `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
         `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>` +
+        (hasLogo ? `<Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/>` : "") +
       `</Relationships>`;
 
     const zip = new JSZip();
@@ -730,6 +846,9 @@
     zip.file("word/styles.xml", stylesXml);
     zip.file("word/numbering.xml", numberingXml);
     zip.file("word/_rels/document.xml.rels", wordRelsXml);
+    if (hasLogo) {
+      zip.file("word/media/logo.png", logoBase64, { base64: true });
+    }
 
     const blob = await zip.generateAsync({
       type: "blob",
@@ -739,7 +858,7 @@
     const url = URL.createObjectURL(blob);
     const a   = document.createElement("a");
     a.href     = url;
-    a.download = termLabel().replace(/\s+/g, "_") + ".docx";
+    a.download = termLabel().replace(/\s+/g, "_") + "_Honor_Roll.docx";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -749,26 +868,67 @@
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
 
-    const marginL = 56, marginR = 56, marginT = 56;
+    const marginL = 72, marginR = 72, marginT = 72;
     const pageW   = doc.internal.pageSize.getWidth();
     const pageH   = doc.internal.pageSize.getHeight();
     const maxW    = pageW - marginL - marginR;
     let y = marginT;
 
     function checkPageBreak(needed) {
-      if (y + needed > pageH - 40) { doc.addPage(); y = marginT; }
+      if (y + needed > pageH - 56) { doc.addPage(); y = marginT; }
     }
 
+    // Contact block
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text("FOR IMMEDIATE RELEASE", marginL, y);
+    y += 15;
+    doc.text("Media Contact: Matt Scotton", marginL, y);
+    y += 15;
+    doc.text("541-514-1054", marginL, y);
+    y += 28;
+
+    // Headline
+    const termFull = termLabel();
+    const headline = `Linn-Benton Community College Congratulates ${termFull} Honor Roll Students`;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    const headLines = doc.splitTextToSize(headline, maxW);
+    headLines.forEach(line => {
+      checkPageBreak(22);
+      doc.text(line, pageW / 2, y, { align: "center" });
+      y += 22;
+    });
+    y += 10;
+
+    // Opening paragraph
+    const dateRange = termDateRange();
+    const termLow   = termLower();
+    const opening = dateRange
+      ? `ALBANY, Ore. \u2013 Congratulations to the following students at Linn-Benton Community College who earned a grade point average of 3.5 or higher for 12 or more graded credits during ${termLow}, ${dateRange}. These do not include pass/no pass or incomplete credits.`
+      : `ALBANY, Ore. \u2013 Congratulations to the following students at Linn-Benton Community College who earned a grade point average of 3.5 or higher for 12 or more graded credits during ${termLow}. These do not include pass/no pass or incomplete credits.`;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    const openLines = doc.splitTextToSize(opening, maxW);
+    openLines.forEach(line => {
+      checkPageBreak(16);
+      doc.text(line, marginL, y);
+      y += 16;
+    });
+    y += 14;
+
+    // Student list
     let currentLoc = null;
     for (const r of rows) {
       const loc = `${r.city}, ${r.state}`;
       if (loc !== currentLoc) {
         checkPageBreak(28);
-        if (currentLoc !== null) y += 6; // extra spacing between sections
+        if (currentLoc !== null) y += 4;
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(14);
+        doc.setFontSize(11);
         doc.text(loc, marginL, y);
-        y += 20;
+        y += 18;
         currentLoc = loc;
       }
       checkPageBreak(16);
@@ -776,11 +936,11 @@
       doc.setFontSize(11);
       const name = `\u2022  ${r.first} ${r.last}`;
       const lines = doc.splitTextToSize(name, maxW - 12);
-      doc.text(lines, marginL + 12, y);
+      doc.text(lines, marginL + 10, y);
       y += lines.length * 15;
     }
 
-    doc.save(termLabel().replace(/\s+/g, "_") + ".pdf");
+    doc.save(termLabel().replace(/\s+/g, "_") + "_Honor_Roll.pdf");
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
