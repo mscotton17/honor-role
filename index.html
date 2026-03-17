@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,25 +7,94 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
+    /* ── Theme tokens ───────────────────────────────────────────────────────── */
+    :root, [data-theme="light"] {
+      --bg:           #f0f4f8;
+      --card-bg:      #ffffff;
+      --card-shadow:  0 4px 24px rgba(0,0,0,.10);
+      --text:         #1a202c;
+      --text-muted:   #718096;
+      --text-body:    #2d3748;
+      --text-soft:    #4a5568;
+      --border:       #e2e8f0;
+      --border-mid:   #cbd5e0;
+      --thead-bg:     #edf2f7;
+      --drop-hover-bg:#ebf8ff;
+      --drop-hover-bd:#4299e1;
+      --accent:       #4299e1;
+      --accent-dark:  #2b6cb0;
+      --badge-bg:     #e2e8f0;
+      --badge-color:  #4a5568;
+      --conflict-bg:  #fefcbf;
+      --conflict-bd:  #f6e05e;
+      --conflict-text:#744210;
+      --toggle-bg:    #e2e8f0;
+      --toggle-color: #4a5568;
+    }
+
+    [data-theme="dark"] {
+      --bg:           #0f1117;
+      --card-bg:      #1a1d27;
+      --card-shadow:  0 4px 32px rgba(0,0,0,.50);
+      --text:         #e2e8f0;
+      --text-muted:   #718096;
+      --text-body:    #cbd5e0;
+      --text-soft:    #a0aec0;
+      --border:       #2d3748;
+      --border-mid:   #4a5568;
+      --thead-bg:     #2d3748;
+      --drop-hover-bg:#1a2744;
+      --drop-hover-bd:#63b3ed;
+      --accent:       #63b3ed;
+      --accent-dark:  #4299e1;
+      --badge-bg:     #2d3748;
+      --badge-color:  #a0aec0;
+      --conflict-bg:  #2d2a0f;
+      --conflict-bd:  #975a16;
+      --conflict-text:#f6e05e;
+      --toggle-bg:    #2d3748;
+      --toggle-color: #e2e8f0;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f0f4f8;
+      background: var(--bg);
+      color: var(--text-body);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 2rem;
+      transition: background .25s, color .25s;
     }
 
+    /* ── Theme toggle button ─────────────────────────────────────────────────── */
+    #themeToggle {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: var(--toggle-bg);
+      color: var(--toggle-color);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .4rem .75rem;
+      font-size: .85rem;
+      cursor: pointer;
+      transition: background .2s, color .2s, border-color .2s;
+      z-index: 100;
+    }
+    #themeToggle:hover { border-color: var(--accent); color: var(--accent); }
+
     .card {
-      background: #fff;
+      background: var(--card-bg);
       border-radius: 12px;
-      box-shadow: 0 4px 24px rgba(0,0,0,.10);
+      box-shadow: var(--card-shadow);
       padding: 2.5rem 2rem;
       max-width: 680px;
       width: 100%;
+      transition: background .25s, box-shadow .25s;
     }
 
     header {
@@ -40,18 +109,18 @@
     header h1 {
       font-size: 1.6rem;
       font-weight: 700;
-      color: #1a202c;
+      color: var(--text);
     }
 
     header p {
       font-size: .9rem;
-      color: #718096;
+      color: var(--text-muted);
       margin-top: .2rem;
     }
 
     /* Drop zone */
     .drop-zone {
-      border: 2px dashed #cbd5e0;
+      border: 2px dashed var(--border-mid);
       border-radius: 10px;
       padding: 2.5rem 1.5rem;
       text-align: center;
@@ -60,8 +129,8 @@
     }
 
     .drop-zone:hover, .drop-zone.drag-over {
-      border-color: #4299e1;
-      background: #ebf8ff;
+      border-color: var(--drop-hover-bd);
+      background: var(--drop-hover-bg);
     }
 
     .drop-zone input[type="file"] { display: none; }
@@ -72,8 +141,8 @@
       display: block;
     }
 
-    .drop-zone p { color: #4a5568; font-size: .95rem; }
-    .drop-zone p span { color: #4299e1; font-weight: 600; }
+    .drop-zone p { color: var(--text-soft); font-size: .95rem; }
+    .drop-zone p span { color: var(--accent); font-weight: 600; }
 
     /* Status messages */
     .alert {
@@ -84,9 +153,13 @@
       display: none;
     }
     .alert.show { display: block; }
-    .alert.error  { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
-    .alert.success{ background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
-    .alert.info   { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
+    .alert.error   { background: #2d1515; color: #fc8181; border: 1px solid #742a2a; }
+    .alert.success { background: #142414; color: #68d391; border: 1px solid #276749; }
+    .alert.info    { background: #0f1f35; color: #90cdf4; border: 1px solid #2b4e7a; }
+
+    [data-theme="light"] .alert.error   { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
+    [data-theme="light"] .alert.success { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+    [data-theme="light"] .alert.info    { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
 
     /* Preview table */
     .preview-wrap {
@@ -99,7 +172,7 @@
     .preview-wrap h2 {
       font-size: 1rem;
       font-weight: 600;
-      color: #2d3748;
+      color: var(--text);
       margin-bottom: .6rem;
     }
 
@@ -109,15 +182,15 @@
       font-size: .875rem;
     }
 
-    thead { background: #edf2f7; }
-    th, td { padding: .5rem .75rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
-    th { font-weight: 600; color: #4a5568; }
-    td { color: #2d3748; }
+    thead { background: var(--thead-bg); }
+    th, td { padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-weight: 600; color: var(--text-soft); }
+    td { color: var(--text-body); }
     tbody tr:last-child td { border-bottom: none; }
 
     .table-footer {
       font-size: .8rem;
-      color: #718096;
+      color: var(--text-muted);
       margin-top: .5rem;
       text-align: right;
     }
@@ -132,16 +205,16 @@
     .conflicts-wrap > h2 {
       font-size: 1rem;
       font-weight: 600;
-      color: #744210;
-      background: #fefcbf;
-      border: 1px solid #f6e05e;
+      color: var(--conflict-text);
+      background: var(--conflict-bg);
+      border: 1px solid var(--conflict-bd);
       border-radius: 8px;
       padding: .6rem .9rem;
       margin-bottom: .75rem;
     }
 
     .conflict-card {
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 1rem;
       margin-bottom: .75rem;
@@ -155,35 +228,37 @@
 
     .conflict-options { display: flex; flex-wrap: wrap; gap: .5rem; }
 
+    .conflict-card p { color: var(--text-muted); }
+
     .conflict-options label {
       display: flex;
       align-items: center;
       gap: .4rem;
       padding: .4rem .75rem;
-      border: 1px solid #cbd5e0;
+      border: 1px solid var(--border-mid);
       border-radius: 6px;
       cursor: pointer;
       font-size: .9rem;
-      color: #2d3748;
+      color: var(--text-body);
       transition: border-color .15s, background .15s;
     }
 
-    .conflict-options label:hover { border-color: #4299e1; background: #ebf8ff; }
+    .conflict-options label:hover { border-color: var(--accent); background: var(--drop-hover-bg); }
 
     .conflict-options input[type="radio"]:checked + span {
       font-weight: 600;
-      color: #2b6cb0;
+      color: var(--accent);
     }
 
     .conflict-options label:has(input:checked) {
-      border-color: #4299e1;
-      background: #ebf8ff;
+      border-color: var(--accent);
+      background: var(--drop-hover-bg);
     }
 
     .badge {
       font-size: .75rem;
-      background: #e2e8f0;
-      color: #4a5568;
+      background: var(--badge-bg);
+      color: var(--badge-color);
       border-radius: 99px;
       padding: .1rem .45rem;
     }
@@ -210,7 +285,7 @@
       margin-top: 1.5rem;
       width: 100%;
       padding: .85rem;
-      background: #4299e1;
+      background: var(--accent);
       color: #fff;
       font-size: 1rem;
       font-weight: 600;
@@ -219,11 +294,12 @@
       cursor: pointer;
       transition: background .2s;
     }
-    #downloadBtn:hover { background: #2b6cb0; }
+    #downloadBtn:hover { background: var(--accent-dark); }
     #downloadBtn.show { display: block; }
   </style>
 </head>
 <body>
+<button id="themeToggle" aria-label="Toggle light/dark mode">☀ Light</button>
 <div class="card">
   <header>
     <span class="icon">🎓</span>
@@ -274,6 +350,14 @@
 
 <script>
 (function () {
+  // ── Theme toggle ───────────────────────────────────────────────────────────
+  const themeToggle = document.getElementById("themeToggle");
+  themeToggle.addEventListener("click", () => {
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    document.documentElement.setAttribute("data-theme", isDark ? "light" : "dark");
+    themeToggle.textContent = isDark ? "🌙 Dark" : "☀ Light";
+  });
+
   const REQUIRED = ["FIRST_NAME", "LAST_NAME", "PHYSICAL_CITY", "PHYSICAL_STATE"];
   const PREVIEW_LIMIT = 50;
 
