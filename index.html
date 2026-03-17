@@ -437,6 +437,14 @@
 
   // ── File handling ──────────────────────────────────────────────────────────
   function handleFile(file) {
+    if (!termSelect.value.trim()) {
+      showAlert("error", "Please select a term before uploading.");
+      return;
+    }
+    if (!yearInput.value.trim()) {
+      showAlert("error", "Please enter a year before uploading.");
+      return;
+    }
     if (!file.name.toLowerCase().endsWith(".csv")) {
       showAlert("error", "Please upload a .csv file.");
       return;
