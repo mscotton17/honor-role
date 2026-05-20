@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Commencement — LBCC Toolbox</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root, [data-theme="light"] {
       --bg:           #f0f4f8;
@@ -203,6 +204,21 @@
       break-inside: avoid;
     }
     @media (max-width: 480px) { .prog-names { columns: 1; } }
+
+    .dl-btn {
+      display: inline-block;
+      margin-top: .75rem;
+      padding: .6rem 1.25rem;
+      background: #48bb78;
+      color: #fff;
+      font-size: .9rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .dl-btn:hover { background: #2f855a; }
   </style>
 </head>
 <body>
@@ -237,11 +253,12 @@
     <div class="drop-zone" id="dropZone2">
       <label for="csvInput2" style="cursor:pointer;display:block;">
         <span class="upload-icon">&#x1F4C2;</span>
-        <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
-        <input type="file" id="csvInput2" accept=".csv,.xlsx" />
+        <p>Drag &amp; drop a <strong>.txt</strong> file here, or <span>click to browse</span></p>
+        <input type="file" id="csvInput2" accept=".txt,.csv,.xlsx" />
       </label>
     </div>
     <div class="alert" id="alert2"></div>
+    <div id="pressReleaseOutput"></div>
   </div>
 
   <!-- Elected Officials List -->
@@ -303,11 +320,147 @@
       reader.readAsArrayBuffer(file);
       return;
     }
+    if (zoneNum === 2 && name.endsWith(".txt")) {
+      const reader = new FileReader();
+      reader.onload = e => parsePressReleaseTxt(e.target.result, file.name, alertBox);
+      reader.readAsText(file);
+      return;
+    }
     if (!name.endsWith(".csv")) {
       showAlert(alertBox, "error", "Please upload a .csv or .xlsx file.");
       return;
     }
     showAlert(alertBox, "success", `\u2713 "${file.name}" uploaded successfully.`);
+  }
+
+  // \u2500\u2500 Commencement Press Release (.txt \u2192 PDF) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+  const PR_DEGREE_RE = /,\s*(Associate|Certificate|Science|Arts|General|Applied)/i;
+
+  function parsePressReleaseTxt(text, filename, alertBox) {
+    const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+    // Group consecutive non-blank lines into paragraphs
+    const paragraphs = [];
+    let current = [];
+    for (const line of lines) {
+      if (line.trim() === "") {
+        if (current.length > 0) { paragraphs.push(current); current = []; }
+      } else {
+        current.push(line);
+      }
+    }
+    if (current.length > 0) paragraphs.push(current);
+
+    const cities = [];
+    for (const para of paragraphs) {
+      const cityLine = para[0].trim();
+      // Skip if first line looks like a student entry (has degree keywords after a comma)
+      if (PR_DEGREE_RE.test(cityLine)) continue;
+
+      // Join remaining lines into one string, collapse whitespace, split on ";"
+      const studentText = para.slice(1).join(" ");
+      const entries = studentText
+        .split(";")
+        .map(e => e.replace(/[ \t]+/g, " ").trim())
+        .filter(e => e.length > 0);
+
+      cities.push({ city: cityLine, students: entries });
+    }
+
+    const total = cities.reduce((s, c) => s + c.students.length, 0);
+    showAlert(alertBox, "success",
+      `\u2713 "${filename}" parsed \u2014 ${total} student${total !== 1 ? "s" : ""} in ${cities.length} cit${cities.length !== 1 ? "ies" : "y"}.`
+    );
+    window._pressReleaseData = cities;
+    renderPressReleaseOutput(cities);
+  }
+
+  function renderPressReleaseOutput(cities) {
+    const output = document.getElementById("pressReleaseOutput");
+    if (!cities.length) { output.innerHTML = ""; return; }
+    output.innerHTML = `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
+  }
+
+  function generatePressReleasePdf() {
+    const cities = window._pressReleaseData;
+    if (!cities) return;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+    const marginL = 72, marginR = 72, marginT = 72;
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const maxW  = pageW - marginL - marginR;
+    let y = marginT;
+
+    function checkPageBreak(needed) {
+      if (y + needed > pageH - 56) { doc.addPage(); y = marginT; }
+    }
+
+    // Logo (grab full-color version from DOM)
+    const logoImg = document.querySelector(".logo-light");
+    if (logoImg && logoImg.src.includes("base64,")) {
+      const logoBase64 = logoImg.src.split("base64,")[1];
+      const logoW = 216, logoH = 64;
+      doc.addImage(logoBase64, "PNG", (pageW - logoW) / 2, y, logoW, logoH);
+      y += logoH + 10;
+    }
+
+    // Contact block
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text("FOR IMMEDIATE RELEASE", marginL, y); y += 15;
+    doc.text("Media Contact: Matt Scotton", marginL, y); y += 15;
+    doc.text("541-514-1054", marginL, y); y += 22;
+
+    // Centered bold title
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    ["Linn-Benton Community College", "Congratulates its 56th Graduating Class"].forEach(line => {
+      checkPageBreak(22);
+      doc.text(line, pageW / 2, y, { align: "center" });
+      y += 22;
+    });
+    y += 10;
+
+    // Body paragraphs
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    const body1 = "ALBANY, Ore. \u2013 Linn-Benton Community College will hold its 56th commencement ceremony on Thursday, June 12, at 5:30 pm on the Albany campus. The class of 2025 features 710 candidates for graduation and LBCC expects to award 918 degrees and certificates to these students.";
+    const body2 = "Graduates are listed alphabetically under their hometown:";
+
+    doc.splitTextToSize(body1, maxW).forEach(line => {
+      checkPageBreak(16); doc.text(line, marginL, y); y += 16;
+    });
+    y += 10;
+    doc.splitTextToSize(body2, maxW).forEach(line => {
+      checkPageBreak(16); doc.text(line, marginL, y); y += 16;
+    });
+    y += 14;
+
+    // City sections
+    for (const { city, students } of cities) {
+      checkPageBreak(28);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text(city, marginL, y);
+      y += 18;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      for (const student of students) {
+        const entry = `\u2022  ${student}`;
+        const lines = doc.splitTextToSize(entry, maxW - 12);
+        checkPageBreak(lines.length * 15);
+        doc.text(lines, marginL + 10, y);
+        y += lines.length * 15;
+      }
+      y += 8;
+    }
+
+    doc.save("Commencement_Press_Release.pdf");
   }
 
   function processProgramXlsx(workbook, filename, alertBox) {
