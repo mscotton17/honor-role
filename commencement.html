@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Commencement — LBCC Toolbox</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root, [data-theme="light"] {
       --bg:           #f0f4f8;
@@ -195,7 +196,7 @@
       <label for="csvInput1" style="cursor:pointer;display:block;">
         <span class="upload-icon">&#x1F4C2;</span>
         <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
-        <input type="file" id="csvInput1" accept=".csv" />
+        <input type="file" id="csvInput1" accept=".csv,.xlsx" />
       </label>
     </div>
     <div class="alert" id="alert1"></div>
@@ -208,7 +209,7 @@
       <label for="csvInput2" style="cursor:pointer;display:block;">
         <span class="upload-icon">&#x1F4C2;</span>
         <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
-        <input type="file" id="csvInput2" accept=".csv" />
+        <input type="file" id="csvInput2" accept=".csv,.xlsx" />
       </label>
     </div>
     <div class="alert" id="alert2"></div>
@@ -221,7 +222,7 @@
       <label for="csvInput3" style="cursor:pointer;display:block;">
         <span class="upload-icon">&#x1F4C2;</span>
         <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
-        <input type="file" id="csvInput3" accept=".csv" />
+        <input type="file" id="csvInput3" accept=".csv,.xlsx" />
       </label>
     </div>
     <div class="alert" id="alert3"></div>
@@ -256,11 +257,31 @@
   });
 
   function handleFile(file, alertBox) {
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      showAlert(alertBox, "error", "Please upload a .csv file.");
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".xlsx")) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const workbook = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+        const rows = [];
+        workbook.SheetNames.forEach(sheetName => {
+          const sheet = workbook.Sheets[sheetName];
+          const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          rows.push(...sheetRows);
+        });
+        processRows(rows, file.name, alertBox);
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+    if (!name.endsWith(".csv")) {
+      showAlert(alertBox, "error", "Please upload a .csv or .xlsx file.");
       return;
     }
     showAlert(alertBox, "success", `\u2713 "${file.name}" uploaded successfully.`);
+  }
+
+  function processRows(rows, filename, alertBox) {
+    showAlert(alertBox, "success", `\u2713 "${filename}" uploaded successfully.`);
   }
 
   function showAlert(box, type, msg) {
