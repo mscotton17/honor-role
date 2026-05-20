@@ -88,6 +88,21 @@
     }
     #themeToggle:hover { border-color: var(--accent); color: var(--accent); }
 
+    .back-link {
+      position: fixed;
+      top: 1rem;
+      left: 1rem;
+      color: var(--text-muted);
+      font-size: .85rem;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      transition: color .2s;
+      z-index: 100;
+    }
+    .back-link:hover { color: var(--text); }
+
     .card {
       background: var(--card-bg);
       border-radius: 12px;
@@ -345,6 +360,7 @@
   </style>
 </head>
 <body>
+<a href="index.html" class="back-link">&#8592; Toolbox</a>
 <button id="themeToggle" aria-label="Toggle light/dark mode">☀ Light</button>
 <div class="card">
   <header>
