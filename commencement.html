@@ -175,6 +175,34 @@
     [data-theme="light"] .alert.error   { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
     [data-theme="light"] .alert.success { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
     [data-theme="light"] .alert.info    { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
+
+    #programOutput { margin-top: 1.25rem; }
+    .prog-section { margin-bottom: 1.25rem; }
+    .prog-section:last-child { margin-bottom: 0; }
+    .prog-section-title {
+      font-size: .9rem;
+      font-weight: 700;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: .35rem;
+      margin-bottom: .5rem;
+    }
+    .prog-names {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      columns: 2;
+      column-gap: 1.5rem;
+    }
+    .prog-names li {
+      font-size: .875rem;
+      color: var(--text-body);
+      padding: .15rem 0;
+      break-inside: avoid;
+    }
+    @media (max-width: 480px) { .prog-names { columns: 1; } }
   </style>
 </head>
 <body>
@@ -195,11 +223,12 @@
     <div class="drop-zone" id="dropZone1">
       <label for="csvInput1" style="cursor:pointer;display:block;">
         <span class="upload-icon">&#x1F4C2;</span>
-        <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
+        <p>Drag &amp; drop a <strong>.csv or .xlsx</strong> file here, or <span>click to browse</span></p>
         <input type="file" id="csvInput1" accept=".csv,.xlsx" />
       </label>
     </div>
     <div class="alert" id="alert1"></div>
+    <div id="programOutput"></div>
   </div>
 
   <!-- Commencement Press Release -->
@@ -249,26 +278,27 @@
       e.preventDefault();
       dropZone.classList.remove("drag-over");
       const file = e.dataTransfer.files[0];
-      if (file) handleFile(file, alertBox);
+      if (file) handleFile(file, n, alertBox);
     });
     csvInput.addEventListener("change", e => {
-      if (e.target.files[0]) handleFile(e.target.files[0], alertBox);
+      if (e.target.files[0]) handleFile(e.target.files[0], n, alertBox);
     });
   });
 
-  function handleFile(file, alertBox) {
+  const DEGREE_KEYWORDS = /\b(certificate|associate|diploma|technology)\b/i;
+  const NAME_SUFFIXES   = /^(jr\.?|sr\.?|ii|iii|iv|v|vi)$/i;
+
+  function handleFile(file, zoneNum, alertBox) {
     const name = file.name.toLowerCase();
     if (name.endsWith(".xlsx")) {
       const reader = new FileReader();
       reader.onload = e => {
         const workbook = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-        const rows = [];
-        workbook.SheetNames.forEach(sheetName => {
-          const sheet = workbook.Sheets[sheetName];
-          const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-          rows.push(...sheetRows);
-        });
-        processRows(rows, file.name, alertBox);
+        if (zoneNum === 1) {
+          processProgramXlsx(workbook, file.name, alertBox);
+        } else {
+          showAlert(alertBox, "success", `\u2713 "${file.name}" uploaded successfully.`);
+        }
       };
       reader.readAsArrayBuffer(file);
       return;
@@ -280,8 +310,87 @@
     showAlert(alertBox, "success", `\u2713 "${file.name}" uploaded successfully.`);
   }
 
-  function processRows(rows, filename, alertBox) {
-    showAlert(alertBox, "success", `\u2713 "${filename}" uploaded successfully.`);
+  function processProgramXlsx(workbook, filename, alertBox) {
+    const sections = [];
+
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      // Detect whether this tab has any indented rows (degree detail lines)
+      const hasIndentedRows = allRows.slice(2).some(row => {
+        const c = row[0];
+        if (c == null) return false;
+        const s = String(c);
+        return s.startsWith(" ") || s.startsWith("\t");
+      });
+
+      const names = [];
+      // Row 0 = section header, Row 1 = blank \u2014 start at index 2
+      for (let i = 2; i < allRows.length; i++) {
+        const c = allRows[i][0];
+        if (c == null) continue;
+        const cellStr = String(c);
+
+        if (cellStr.trim() === "") continue;
+        if (cellStr.startsWith(" ") || cellStr.startsWith("\t")) continue;
+        if (DEGREE_KEYWORDS.test(cellStr)) continue;
+
+        if (!hasIndentedRows) {
+          // GED/ELA-style tab: all remaining rows are student names
+          names.push(cellStr.trim());
+        } else {
+          // Tab has degree detail rows: a student row is immediately followed by an indented row
+          const nextC = allRows[i + 1] ? allRows[i + 1][0] : null;
+          const nextStr = nextC != null ? String(nextC) : "";
+          if (nextStr.startsWith(" ") || nextStr.startsWith("\t")) {
+            names.push(cellStr.trim());
+          }
+          // Otherwise it's a degree subheading \u2014 skip
+        }
+      }
+
+      names.sort((a, b) => {
+        const la = lastNameKey(a);
+        const lb = lastNameKey(b);
+        return la < lb ? -1 : la > lb ? 1 : 0;
+      });
+
+      if (names.length > 0) sections.push({ title: sheetName, names });
+    });
+
+    const total = sections.reduce((s, sec) => s + sec.names.length, 0);
+    showAlert(alertBox, "success",
+      `\u2713 "${filename}" uploaded \u2014 ${total} student${total !== 1 ? "s" : ""} across ${sections.length} section${sections.length !== 1 ? "s" : ""}.`
+    );
+    renderProgramOutput(sections);
+  }
+
+  function lastNameKey(name) {
+    const tokens = name.trim().split(/\s+/);
+    while (tokens.length > 1 && NAME_SUFFIXES.test(tokens[tokens.length - 1])) {
+      tokens.pop();
+    }
+    return tokens[tokens.length - 1].toLowerCase();
+  }
+
+  function renderProgramOutput(sections) {
+    const output = document.getElementById("programOutput");
+    if (!sections.length) { output.innerHTML = ""; return; }
+
+    let html = "";
+    sections.forEach(sec => {
+      html += `<div class="prog-section">`;
+      html += `<h3 class="prog-section-title">${esc(sec.title)}</h3>`;
+      html += `<ul class="prog-names">`;
+      sec.names.forEach(n => { html += `<li>${esc(n)}</li>`; });
+      html += `</ul></div>`;
+    });
+    output.innerHTML = html;
+  }
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   function showAlert(box, type, msg) {
