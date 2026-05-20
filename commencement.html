@@ -382,10 +382,9 @@
     output.innerHTML = `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
   }
 
-  function generatePressReleasePdf() {
+  window.generatePressReleasePdf = function generatePressReleasePdf() {
     const cities = window._pressReleaseData;
     if (!cities) return;
-
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
 
