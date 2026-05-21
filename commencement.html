@@ -24,6 +24,11 @@
       --toggle-bg:    #e2e8f0;
       --toggle-color: #4a5568;
       --section-bd:   #e2e8f0;
+      --badge-bg:     #e2e8f0;
+      --badge-color:  #4a5568;
+      --conflict-bg:  #fefcbf;
+      --conflict-bd:  #f6e05e;
+      --conflict-text:#744210;
     }
 
     [data-theme="dark"] {
@@ -43,6 +48,11 @@
       --toggle-bg:    #2d3748;
       --toggle-color: #e2e8f0;
       --section-bd:   #2d3748;
+      --badge-bg:     #2d3748;
+      --badge-color:  #a0aec0;
+      --conflict-bg:  #2d2a0f;
+      --conflict-bd:  #975a16;
+      --conflict-text:#f6e05e;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -204,6 +214,51 @@
       break-inside: avoid;
     }
     @media (max-width: 480px) { .prog-names { columns: 1; } }
+
+    .conflicts-wrap { margin-top: 1rem; display: none; }
+    .conflicts-wrap.show { display: block; }
+    .conflicts-wrap > h2 {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--conflict-text);
+      background: var(--conflict-bg);
+      border: 1px solid var(--conflict-bd);
+      border-radius: 8px;
+      padding: .55rem .85rem;
+      margin-bottom: .65rem;
+    }
+    .conflict-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .9rem;
+      margin-bottom: .65rem;
+    }
+    .conflict-card p { font-size: .85rem; color: var(--text-muted); margin-bottom: .5rem; }
+    .conflict-options { display: flex; flex-wrap: wrap; gap: .45rem; }
+    .conflict-options label {
+      display: flex; align-items: center; gap: .4rem;
+      padding: .35rem .7rem;
+      border: 1px solid var(--border-mid);
+      border-radius: 6px; cursor: pointer;
+      font-size: .875rem; color: var(--text-body);
+      transition: border-color .15s, background .15s;
+    }
+    .conflict-options label:hover { border-color: var(--accent); background: var(--drop-hover-bg); }
+    .conflict-options input[type="radio"]:checked + span { font-weight: 600; color: var(--accent); }
+    .conflict-options label:has(input:checked) { border-color: var(--accent); background: var(--drop-hover-bg); }
+    .badge {
+      font-size: .72rem;
+      background: var(--badge-bg); color: var(--badge-color);
+      border-radius: 99px; padding: .1rem .4rem;
+    }
+    .apply-btn {
+      display: block; width: 100%; margin-top: .5rem;
+      padding: .65rem; background: #ed8936; color: #fff;
+      font-size: .9rem; font-weight: 600;
+      border: none; border-radius: 8px; cursor: pointer;
+      transition: background .2s;
+    }
+    .apply-btn:hover { background: #c05621; }
 
     .dl-btn {
       display: inline-block;
@@ -372,14 +427,142 @@
     showAlert(alertBox, "success",
       `\u2713 "${filename}" parsed \u2014 ${total} student${total !== 1 ? "s" : ""} in ${cities.length} cit${cities.length !== 1 ? "ies" : "y"}.`
     );
-    window._pressReleaseData = cities;
-    renderPressReleaseOutput(cities);
+    prReviewAndFinalize(cities);
   }
 
-  function renderPressReleaseOutput(cities) {
+  // ── Press Release review pipeline ─────────────────────────────────────────
+
+  function isTitleCase(str) {
+    return str.trim().split(/\s+/).every(w => w.length <= 2 || /^[A-Z][^A-Z]/.test(w));
+  }
+  function toTitleCase(str) {
+    return str.trim().split(/\s+/).map(w => w.length === 0 ? w : w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+  }
+
+  function prReviewAndFinalize(cities) {
+    window._prPendingCities = cities;
+    const conflicts = prDetectCityConflicts(cities);
+    if (conflicts.length) {
+      prRenderCityConflicts(conflicts);
+    } else {
+      prCheckNames(cities);
+    }
+  }
+
+  function prDetectCityConflicts(cities) {
+    const groups = new Map();
+    for (const c of cities) {
+      const normKey = c.city.toLowerCase().trim();
+      if (!groups.has(normKey)) groups.set(normKey, new Map());
+      groups.get(normKey).set(c.city, (groups.get(normKey).get(c.city) || 0) + c.students.length);
+    }
+    const conflicts = [];
+    for (const [normKey, variants] of groups) {
+      if (variants.size > 1) {
+        conflicts.push({ normKey, variants: [...variants.entries()].map(([city, count]) => ({ city, count })) });
+      }
+    }
+    return conflicts;
+  }
+
+  function prRenderCityConflicts(conflicts) {
     const output = document.getElementById("pressReleaseOutput");
-    if (!cities.length) { output.innerHTML = ""; return; }
-    output.innerHTML = `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
+    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Possible duplicate locations — please review</h2><div id="prConflictCards">`;
+    conflicts.forEach((c, ci) => {
+      html += `<div class="conflict-card"><p>These appear to be the same location — which spelling should be used?</p><div class="conflict-options">`;
+      const maxCount = Math.max(...c.variants.map(v => v.count));
+      c.variants.forEach((v, vi) => {
+        const checked = (v.count === maxCount && vi === c.variants.findIndex(x => x.count === maxCount)) ? "checked" : "";
+        html += `<label><input type="radio" name="prcf_${ci}" value="${esc(v.city)}" ${checked}><span>${esc(v.city)}</span><span class="badge">${v.count} student${v.count !== 1 ? "s" : ""}</span></label>`;
+      });
+      html += `<label><input type="radio" name="prcf_${ci}" value="__keep__"><span>Keep separate</span></label>`;
+      html += `</div></div>`;
+    });
+    html += `</div><button class="apply-btn" id="prApplyCityBtn">Apply selections &amp; continue</button></div>`;
+    output.innerHTML = html;
+
+    document.getElementById("prApplyCityBtn").addEventListener("click", () => {
+      const cards = document.querySelectorAll("#prConflictCards .conflict-card");
+      const resolutions = new Map();
+      cards.forEach((card, ci) => {
+        const checked = card.querySelector(`input[name="prcf_${ci}"]:checked`);
+        if (checked && checked.value !== "__keep__") resolutions.set(conflicts[ci].normKey, checked.value);
+      });
+      const pending = window._prPendingCities;
+      const merged = [];
+      const seenNorm = new Map();
+      for (const cityObj of pending) {
+        const normKey = cityObj.city.toLowerCase().trim();
+        const canonical = resolutions.has(normKey) ? resolutions.get(normKey) : cityObj.city;
+        const mergeKey = canonical.toLowerCase();
+        if (seenNorm.has(mergeKey)) {
+          merged[seenNorm.get(mergeKey)].students.push(...cityObj.students);
+        } else {
+          seenNorm.set(mergeKey, merged.length);
+          merged.push({ city: canonical, students: [...cityObj.students] });
+        }
+      }
+      prCheckNames(merged);
+    });
+  }
+
+  function prCheckNames(cities) {
+    window._prPendingCities = cities;
+    const flagged = prFindNameIssues(cities);
+    if (flagged.length) {
+      prRenderNameReview(flagged);
+    } else {
+      prFinalize(cities);
+    }
+  }
+
+  function prFindNameIssues(cities) {
+    const flagged = [];
+    cities.forEach((cityObj, ci) => {
+      cityObj.students.forEach((entry, si) => {
+        const commaIdx = entry.indexOf(",");
+        const namePart = (commaIdx !== -1 ? entry.slice(0, commaIdx) : entry).trim();
+        if (!isTitleCase(namePart)) flagged.push({ ci, si, namePart, suggested: toTitleCase(namePart), entry });
+      });
+    });
+    return flagged;
+  }
+
+  function prRenderNameReview(flagged) {
+    const output = document.getElementById("pressReleaseOutput");
+    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Some names may not be in title case — please review</h2><div id="prNameCards">`;
+    flagged.forEach((f, fi) => {
+      html += `<div class="conflict-card" data-ci="${f.ci}" data-si="${f.si}" data-name="${esc(f.namePart)}">`;
+      html += `<p>Original: <strong>${esc(f.namePart)}</strong></p><div class="conflict-options">`;
+      html += `<label><input type="radio" name="prnm_${fi}" value="suggested" checked><span>${esc(f.suggested)}</span><span class="badge">suggested</span></label>`;
+      html += `<label><input type="radio" name="prnm_${fi}" value="original"><span>${esc(f.namePart)}</span><span class="badge">keep original</span></label>`;
+      html += `</div></div>`;
+    });
+    html += `</div><button class="apply-btn" id="prApplyNamesBtn">Apply selections &amp; continue</button></div>`;
+    output.innerHTML = html;
+
+    document.getElementById("prApplyNamesBtn").addEventListener("click", () => {
+      const cards = document.querySelectorAll("#prNameCards .conflict-card");
+      const cities2 = window._prPendingCities.map(c => ({ ...c, students: [...c.students] }));
+      cards.forEach((card, fi) => {
+        const checked = card.querySelector(`input[name="prnm_${fi}"]:checked`);
+        if (!checked || checked.value === "original") return;
+        const ci = parseInt(card.dataset.ci);
+        const si = parseInt(card.dataset.si);
+        const origName = card.dataset.name;
+        const entry = cities2[ci].students[si];
+        const commaIdx = entry.indexOf(",");
+        const degreePart = commaIdx !== -1 ? entry.slice(commaIdx) : "";
+        cities2[ci].students[si] = toTitleCase(origName) + degreePart;
+      });
+      prFinalize(cities2);
+    });
+  }
+
+  function prFinalize(cities) {
+    window._pressReleaseData = cities;
+    document.getElementById("pressReleaseOutput").innerHTML =
+      `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
   }
 
   window.generatePressReleasePdf = function generatePressReleasePdf() {
