@@ -260,6 +260,19 @@
     }
     .apply-btn:hover { background: #c05621; }
 
+    .city-input {
+      width: 100%;
+      margin-top: .5rem;
+      padding: .45rem .65rem;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-mid);
+      border-radius: 6px;
+      font-size: .9rem;
+    }
+    .city-input:focus { outline: none; border-color: var(--accent); }
+    .city-suggestion { font-size: .8rem; color: var(--text-muted); margin-top: .35rem; }
+
     .dl-btn {
       display: inline-block;
       margin-top: .75rem;
@@ -427,7 +440,7 @@
     showAlert(alertBox, "success",
       `\u2713 "${filename}" parsed \u2014 ${total} student${total !== 1 ? "s" : ""} in ${cities.length} cit${cities.length !== 1 ? "ies" : "y"}.`
     );
-    prReviewAndFinalize(cities);
+    prCheckIncompleteCities(cities);
   }
 
   // ── Press Release review pipeline ─────────────────────────────────────────
@@ -439,6 +452,60 @@
     return str.trim().split(/\s+/).map(w => w.length === 0 ? w : w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
   }
 
+  // Step 1: incomplete city headers (e.g. "Albany," with no state)
+  function prCheckIncompleteCities(cities) {
+    window._prPendingCities = cities;
+    const incomplete = cities
+      .map((c, i) => ({ i, city: c.city }))
+      .filter(({ city }) => /^[^,]+,\s*$/.test(city.trim()));
+    if (incomplete.length) {
+      prRenderIncompleteCities(incomplete, cities);
+    } else {
+      prReviewAndFinalize(cities);
+    }
+  }
+
+  function prGetCitySuggestion(prefix, allCities) {
+    const norm = prefix.toLowerCase();
+    for (const c of allCities) {
+      const parts = c.city.split(",");
+      if (parts.length >= 2 && parts[0].trim().toLowerCase() === norm && parts[1].trim() !== "") {
+        return c.city;
+      }
+    }
+    return null;
+  }
+
+  function prRenderIncompleteCities(incomplete, allCities) {
+    const output = document.getElementById("pressReleaseOutput");
+    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Some locations are missing their state — please fill in</h2><div id="prIncompleteCards">`;
+    incomplete.forEach(item => {
+      const prefix = item.city.split(",")[0].trim();
+      const suggestion = prGetCitySuggestion(prefix, allCities);
+      html += `<div class="conflict-card" data-city-index="${item.i}">`;
+      html += `<p>Incomplete location: <strong>${esc(item.city)}</strong></p>`;
+      html += `<input class="city-input" type="text" value="${esc(suggestion || prefix + ", ")}" placeholder="${esc(prefix)}, OR">`;
+      if (suggestion) {
+        html += `<p class="city-suggestion">Suggested based on <strong>${esc(suggestion)}</strong> already in the list</p>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div><button class="apply-btn" id="prApplyIncompleteBtn">Apply &amp; continue</button></div>`;
+    output.innerHTML = html;
+
+    document.getElementById("prApplyIncompleteBtn").addEventListener("click", () => {
+      const cards = document.querySelectorAll("#prIncompleteCards .conflict-card");
+      const cities2 = window._prPendingCities.map(c => ({ ...c }));
+      cards.forEach(card => {
+        const idx = parseInt(card.dataset.cityIndex);
+        const val = card.querySelector(".city-input").value.trim();
+        if (val) cities2[idx] = { ...cities2[idx], city: val };
+      });
+      prReviewAndFinalize(cities2);
+    });
+  }
+
+  // Step 2: city spelling conflicts
   function prReviewAndFinalize(cities) {
     window._prPendingCities = cities;
     const conflicts = prDetectCityConflicts(cities);
