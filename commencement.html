@@ -303,6 +303,26 @@
       transition: background .2s;
     }
     .dl-btn:hover { background: #2f855a; }
+
+    .pr-info-row {
+      display: flex;
+      gap: .65rem;
+      margin-bottom: .75rem;
+      flex-wrap: wrap;
+    }
+    .pr-info-row input {
+      flex: 1;
+      min-width: 100px;
+      padding: .5rem .7rem;
+      border-radius: 7px;
+      border: 1.5px solid var(--border-mid);
+      background: var(--bg);
+      color: var(--text);
+      font-size: .875rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .pr-info-row input:focus { border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -334,6 +354,11 @@
   <!-- Commencement Press Release -->
   <div class="upload-section">
     <div class="section-title">&#x1F4F0; Commencement Press Release</div>
+    <div class="pr-info-row">
+      <input type="text" id="prYear"     placeholder="Year (e.g. 2025)" maxlength="9" />
+      <input type="text" id="prGradDate" placeholder="Graduation date (e.g. Thursday, June 12)" />
+      <input type="text" id="prGradTime" placeholder="Time (e.g. 5:30 pm)" />
+    </div>
     <div class="drop-zone" id="dropZone2">
       <label for="csvInput2" style="cursor:pointer;display:block;">
         <span class="upload-icon">&#x1F4C2;</span>
@@ -405,6 +430,12 @@
       return;
     }
     if (zoneNum === 2 && name.endsWith(".txt")) {
+      const prYear     = document.getElementById("prYear").value.trim();
+      const prGradDate = document.getElementById("prGradDate").value.trim();
+      const prGradTime = document.getElementById("prGradTime").value.trim();
+      if (!prYear)     { showAlert(alertBox, "error", "Please enter the graduation year before uploading."); return; }
+      if (!prGradDate) { showAlert(alertBox, "error", "Please enter the graduation date before uploading."); return; }
+      if (!prGradTime) { showAlert(alertBox, "error", "Please enter the graduation time before uploading."); return; }
       const reader = new FileReader();
       reader.onload = e => parsePressReleaseTxt(e.target.result, file.name, alertBox);
       reader.readAsText(file);
@@ -867,7 +898,10 @@
     // Body paragraphs
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    const body1 = "ALBANY, Ore. \u2013 Linn-Benton Community College will hold its 56th commencement ceremony on Thursday, June 12, at 5:30 pm on the Albany campus. The class of 2025 features 710 candidates for graduation and LBCC expects to award 918 degrees and certificates to these students.";
+    const prYear     = document.getElementById("prYear").value.trim();
+    const prGradDate = document.getElementById("prGradDate").value.trim();
+    const prGradTime = document.getElementById("prGradTime").value.trim();
+    const body1 = `ALBANY, Ore. \u2013 Linn-Benton Community College will hold its 56th commencement ceremony on ${prGradDate}, at ${prGradTime} on the Albany campus. The class of ${prYear} features 710 candidates for graduation and LBCC expects to award 918 degrees and certificates to these students.`;
     const body2 = "Graduates are listed alphabetically under their hometown:";
 
     doc.splitTextToSize(body1, maxW).forEach(line => {
