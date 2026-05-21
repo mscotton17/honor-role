@@ -7,6 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧰</text></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     :root, [data-theme="light"] {
       --bg:           #f0f4f8;
@@ -304,6 +305,14 @@
       transition: background .2s;
     }
     .dl-btn:hover { background: #2f855a; }
+
+    .pr-dl-row {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-top: .75rem;
+    }
+    .pr-dl-row .dl-btn { margin-top: 0; }
 
     .pr-info-row {
       display: flex;
@@ -878,8 +887,207 @@
     const sorted = merged.sort((a, b) => a.city.localeCompare(b.city, undefined, { sensitivity: "base" }));
     window._pressReleaseData = sorted;
     document.getElementById("pressReleaseOutput").innerHTML =
-      `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
+      `<div class="pr-dl-row">` +
+        `<button class="dl-btn" onclick="generatePressReleaseDocx()">&#x2B07; Download Press Release .docx</button>` +
+        `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>` +
+      `</div>`;
   }
+
+  window.generatePressReleaseDocx = async function generatePressReleaseDocx() {
+    const cities = window._pressReleaseData;
+    if (!cities) return;
+
+    const WML = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const WP  = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+    const A   = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+    const R   = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+    const prYear          = document.getElementById("prYear").value.trim();
+    const prGradDate      = document.getElementById("prGradDate").value.trim();
+    const prGradTime      = document.getElementById("prGradTime").value.trim();
+    const ceremonyOrdinal = ordinalSuffix(parseInt(prYear) - 1969);
+    const studentCount    = window._prStudentCount || "XXX";
+    const degreeCount     = window._prDegreeCount  || "XXX";
+
+    function xmlEsc(s) {
+      return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+               .replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+    }
+    function rPr(extra = "") {
+      return `<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/>${extra}</w:rPr>`;
+    }
+    function pSp() {
+      return `<w:spacing w:line="240" w:lineRule="auto"/>`;
+    }
+    function blank() {
+      return `<w:p><w:pPr>${pSp()}</w:pPr><w:r>${rPr()}</w:r></w:p>`;
+    }
+
+    const logoImg    = document.querySelector(".logo-light");
+    const logoBase64 = (logoImg && logoImg.src.includes("base64,")) ? logoImg.src.split("base64,")[1] : null;
+    const hasLogo    = !!logoBase64;
+
+    let bodyXml = "";
+
+    // Logo
+    if (hasLogo) {
+      bodyXml +=
+        `<w:p><w:pPr><w:jc w:val="center"/>${pSp()}</w:pPr>` +
+        `<w:r>${rPr()}<w:drawing>` +
+          `<wp:inline xmlns:wp="${WP}" distT="114300" distB="114300" distL="114300" distR="114300">` +
+            `<wp:extent cx="2857500" cy="844960"/>` +
+            `<wp:effectExtent b="0" l="0" r="0" t="0"/>` +
+            `<wp:docPr id="1" name="logo.png"/>` +
+            `<a:graphic xmlns:a="${A}"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+              `<pic:pic xmlns:pic="${PIC}">` +
+                `<pic:nvPicPr><pic:cNvPr id="0" name="logo.png"/><pic:cNvPicPr preferRelativeResize="0"/></pic:nvPicPr>` +
+                `<pic:blipFill><a:blip r:embed="rId6" xmlns:r="${R}"/><a:srcRect b="0" l="0" r="0" t="0"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+                `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2857500" cy="844960"/></a:xfrm><a:prstGeom prst="rect"/><a:ln/></pic:spPr>` +
+              `</pic:pic>` +
+            `</a:graphicData></a:graphic>` +
+          `</wp:inline>` +
+        `</w:drawing></w:r></w:p>`;
+    }
+
+    bodyXml += blank();
+
+    // Contact block
+    bodyXml +=
+      `<w:p><w:pPr>${pSp()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t xml:space="preserve">FOR IMMEDIATE RELEASE</w:t><w:br w:type="textWrapping"/>` +
+        `<w:t>Media Contact: Matt Scotton</w:t></w:r>` +
+      `</w:p>`;
+    bodyXml +=
+      `<w:p><w:pPr>${pSp()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t>541-514-1054</w:t></w:r>` +
+      `</w:p>`;
+
+    bodyXml += blank();
+
+    // Headline (centered, bold, 20pt)
+    bodyXml +=
+      `<w:p><w:pPr>${pSp()}<w:jc w:val="center"/></w:pPr>` +
+        `<w:r>${rPr(`<w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/>`)}<w:t xml:space="preserve">Linn-Benton Community College</w:t></w:r>` +
+      `</w:p>`;
+    bodyXml +=
+      `<w:p><w:pPr>${pSp()}<w:jc w:val="center"/></w:pPr>` +
+        `<w:r>${rPr(`<w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/>`)}<w:t xml:space="preserve">Congratulates its ${xmlEsc(ceremonyOrdinal)} Graduating Class</w:t></w:r>` +
+      `</w:p>`;
+
+    bodyXml += blank();
+
+    // Body paragraphs
+    const body1 = `ALBANY, Ore. – Linn-Benton Community College will hold its ${xmlEsc(ceremonyOrdinal)} commencement ceremony on ${xmlEsc(prGradDate)}, at ${xmlEsc(prGradTime)} on the Albany campus. The class of ${xmlEsc(prYear)} features ${xmlEsc(studentCount)} candidates for graduation and LBCC expects to award ${xmlEsc(degreeCount)} degrees and certificates to these students.`;
+    const body2 = `Graduates are listed alphabetically under their hometown:`;
+
+    bodyXml +=
+      `<w:p><w:pPr>${pSp()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t xml:space="preserve">${body1}</w:t></w:r>` +
+      `</w:p>`;
+    bodyXml += blank();
+    bodyXml +=
+      `<w:p><w:pPr>${pSp()}</w:pPr>` +
+        `<w:r>${rPr()}<w:t xml:space="preserve">${body2}</w:t></w:r>` +
+      `</w:p>`;
+    bodyXml += blank();
+
+    // City sections
+    for (let i = 0; i < cities.length; i++) {
+      const entry = cities[i];
+      // Bold city header
+      bodyXml +=
+        `<w:p><w:pPr>${pSp()}</w:pPr>` +
+          `<w:r>${rPr(`<w:b/><w:bCs/>`)}<w:t>${xmlEsc(entry.city)}</w:t></w:r>` +
+        `</w:p>`;
+      // Bulleted students
+      for (const s of entry.students) {
+        bodyXml +=
+          `<w:p><w:pPr>` +
+            `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>` +
+            `${pSp()}<w:ind w:left="720" w:hanging="360"/>` +
+          `</w:pPr>` +
+            `<w:r>${rPr()}<w:t>${xmlEsc(s)}</w:t></w:r>` +
+          `</w:p>`;
+      }
+      if (i < cities.length - 1) bodyXml += blank();
+    }
+
+    bodyXml += `<w:sectPr/>`;
+
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="${WML}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+        `<w:body>${bodyXml}</w:body>` +
+      `</w:document>`;
+
+    const stylesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:styles xmlns:w="${WML}">` +
+        `<w:style w:type="paragraph" w:default="1" w:styleId="Normal">` +
+          `<w:name w:val="Normal"/>` +
+          `<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
+        `</w:style>` +
+      `</w:styles>`;
+
+    const numberingXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:numbering xmlns:w="${WML}">` +
+        `<w:abstractNum w:abstractNumId="0">` +
+          `<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>` +
+            `<w:lvlText w:val="&#x2022;"/><w:lvlJc w:val="left"/>` +
+            `<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>` +
+            `<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:cs="Symbol"/></w:rPr>` +
+          `</w:lvl>` +
+        `</w:abstractNum>` +
+        `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>` +
+      `</w:numbering>`;
+
+    const contentTypesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+        `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+        `<Default Extension="xml" ContentType="application/xml"/>` +
+        (hasLogo ? `<Default Extension="png" ContentType="image/png"/>` : "") +
+        `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+        `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>` +
+        `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` +
+      `</Types>`;
+
+    const relsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+      `</Relationships>`;
+
+    const wordRelsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+        `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>` +
+        (hasLogo ? `<Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/>` : "") +
+      `</Relationships>`;
+
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", contentTypesXml);
+    zip.file("_rels/.rels", relsXml);
+    zip.file("word/document.xml", documentXml);
+    zip.file("word/styles.xml", stylesXml);
+    zip.file("word/numbering.xml", numberingXml);
+    zip.file("word/_rels/document.xml.rels", wordRelsXml);
+    if (hasLogo) zip.file("word/media/logo.png", logoBase64, { base64: true });
+
+    const blob = await zip.generateAsync({
+      type: "blob",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement("a");
+    a.href     = url;
+    a.download = "Commencement_Press_Release.docx";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   window.generatePressReleasePdf = function generatePressReleasePdf() {
     const cities = window._pressReleaseData;
