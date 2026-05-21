@@ -507,6 +507,24 @@
     const output = document.getElementById("pressReleaseOutput");
     let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Some locations need attention — please fill in</h2><div id="prProblemCards">`;
     problems.forEach(p => {
+      // Blank location with multiple students: show a per-student input row immediately
+      if (p.type === "blank" && p.students.length > 1) {
+        html += `<div class="conflict-card" data-city-index="${p.i}" data-per-student="true">`;
+        html += `<p>Blank location — assign each student individually:</p>`;
+        p.students.forEach((student, si) => {
+          const commaIdx = student.indexOf(",");
+          const namePart   = esc(commaIdx !== -1 ? student.slice(0, commaIdx).trim() : student.trim());
+          const degreePart = commaIdx !== -1 ? esc(student.slice(commaIdx + 1).trim()) : "";
+          html += `<div class="per-student-row">`;
+          html += `<div class="per-student-name"><strong>${namePart}</strong>${degreePart ? `<span class="per-student-degree">, ${degreePart}</span>` : ""}</div>`;
+          html += `<input class="city-input per-student-city" type="text" value="" placeholder="e.g. Albany, OR" data-student-index="${si}">`;
+          html += `</div>`;
+        });
+        html += `</div>`;
+        return;
+      }
+
+      // All other problem types: single city input
       let desc = "";
       let defaultVal = "";
       let placeholder = "e.g. Albany, OR";
@@ -535,17 +553,48 @@
 
     document.getElementById("prApplyProblemBtn").addEventListener("click", () => {
       const cards = document.querySelectorAll("#prProblemCards .conflict-card");
-      const cities2 = window._prPendingCities.map(c => ({ ...c, students: [...c.students] }));
+      let cities2 = window._prPendingCities.map(c => ({ ...c, students: [...c.students] }));
       const multiStudentFixes = [];
+      const perStudentExpansions = [];
+
       cards.forEach(card => {
         const idx = parseInt(card.dataset.cityIndex);
-        const val = card.querySelector(".city-input").value.trim();
-        if (!val) return;
-        cities2[idx] = { ...cities2[idx], city: val };
-        if (cities2[idx].students.length > 1) {
-          multiStudentFixes.push({ cityIndex: idx, newCity: val, students: [...cities2[idx].students] });
+        if (card.dataset.perStudent === "true") {
+          // Blank multi-student: collect per-student cities and expand inline
+          const inputs = card.querySelectorAll(".per-student-city");
+          const grouped = new Map();
+          cities2[idx].students.forEach((student, si) => {
+            const city = inputs[si]?.value.trim();
+            if (!city) return;
+            if (!grouped.has(city)) grouped.set(city, []);
+            grouped.get(city).push(student);
+          });
+          if (grouped.size) perStudentExpansions.push({ idx, grouped });
+        } else {
+          const val = card.querySelector(".city-input").value.trim();
+          if (!val) return;
+          cities2[idx] = { ...cities2[idx], city: val };
+          if (cities2[idx].students.length > 1) {
+            multiStudentFixes.push({ cityIndex: idx, newCity: val, students: [...cities2[idx].students] });
+          }
         }
       });
+
+      // Expand blank per-student entries in-place, preserving array order
+      if (perStudentExpansions.length) {
+        const expandSet = new Set(perStudentExpansions.map(e => e.idx));
+        const expanded = [];
+        for (let i = 0; i < cities2.length; i++) {
+          if (expandSet.has(i)) {
+            const exp = perStudentExpansions.find(e => e.idx === i);
+            for (const [city, students] of exp.grouped) expanded.push({ city, students });
+          } else {
+            expanded.push(cities2[i]);
+          }
+        }
+        cities2 = expanded;
+      }
+
       if (multiStudentFixes.length) {
         prPerStudentAssign(multiStudentFixes, cities2);
       } else {
