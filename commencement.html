@@ -1351,42 +1351,54 @@
       showAlert(alertBox, "error", "File appears to be empty or has only a header row.");
       return;
     }
-    const headers    = rows[0].map(h => String(h).trim());
-    const nameIdx    = findLdCol(headers, /name|student/i);
-    const degreeIdx  = findLdCol(headers, /degree|program|major|credential/i);
-    const addressIdx = findLdCol(headers, /address|addr|street|mailing/i);
-    const needsMap   = nameIdx < 0 || degreeIdx < 0 || addressIdx < 0;
+    const headers = rows[0].map(h => String(h).trim());
+    const colMap = {
+      lastIdx:   findLdCol(headers, /last/i),
+      firstIdx:  findLdCol(headers, /first/i),
+      degreeIdx: findLdCol(headers, /degree|program|major|credential|award/i),
+      streetIdx: findLdCol(headers, /street|addr/i),
+      cityIdx:   findLdCol(headers, /city/i),
+      stateIdx:  findLdCol(headers, /\bstate\b/i),
+      zipIdx:    findLdCol(headers, /zip|postal/i),
+    };
+    const needsMap = Object.values(colMap).some(i => i < 0);
 
     showAlert(alertBox, "info", `✓ "${filename}" loaded — ${rows.length - 1} rows.`);
 
     if (needsMap) {
-      renderLdColMap(headers, rows, filename, alertBox, nameIdx, degreeIdx, addressIdx);
+      renderLdColMap(headers, rows, alertBox, colMap);
     } else {
-      startLdLookup(rows.slice(1), nameIdx, degreeIdx, addressIdx, alertBox);
+      startLdLookup(rows.slice(1), colMap, alertBox);
     }
   }
 
-  function renderLdColMap(headers, rows, filename, alertBox, ni, di, ai) {
+  function renderLdColMap(headers, rows, alertBox, colMap) {
     const output = document.getElementById("ldOutput");
     function bestGuess(re) {
       const idx = headers.findIndex(h => re.test(String(h).trim()));
       return idx >= 0 ? idx : 0;
     }
-    const defN = ni >= 0 ? ni : bestGuess(/name|student/i);
-    const defD = di >= 0 ? di : bestGuess(/degree|program|major|credential/i);
-    const defA = ai >= 0 ? ai : bestGuess(/address|addr|street|mailing/i);
+    function def(key, re) { return colMap[key] >= 0 ? colMap[key] : bestGuess(re); }
     const opts = (sel) => headers.map((h, i) =>
       `<option value="${i}"${i === sel ? " selected" : ""}>${esc(h || `Column ${i + 1}`)}</option>`
     ).join("");
     output.innerHTML =
       `<div class="conflict-card">` +
         `<p>Could not auto-detect all columns. Confirm the mapping below:</p>` +
-        `<div class="ld-map-row"><span class="ld-map-label">Name</span>` +
-          `<select class="ld-map-select" id="ldMapName">${opts(defN)}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">Last Name</span>` +
+          `<select class="ld-map-select" id="ldMapLast">${opts(def("lastIdx", /last/i))}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">First Name</span>` +
+          `<select class="ld-map-select" id="ldMapFirst">${opts(def("firstIdx", /first/i))}</select></div>` +
         `<div class="ld-map-row"><span class="ld-map-label">Degree(s)</span>` +
-          `<select class="ld-map-select" id="ldMapDegree">${opts(defD)}</select></div>` +
-        `<div class="ld-map-row"><span class="ld-map-label">Address</span>` +
-          `<select class="ld-map-select" id="ldMapAddress">${opts(defA)}</select></div>` +
+          `<select class="ld-map-select" id="ldMapDegree">${opts(def("degreeIdx", /degree|award/i))}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">Street</span>` +
+          `<select class="ld-map-select" id="ldMapStreet">${opts(def("streetIdx", /street|addr/i))}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">City</span>` +
+          `<select class="ld-map-select" id="ldMapCity">${opts(def("cityIdx", /city/i))}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">State</span>` +
+          `<select class="ld-map-select" id="ldMapState">${opts(def("stateIdx", /state/i))}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">ZIP</span>` +
+          `<select class="ld-map-select" id="ldMapZip">${opts(def("zipIdx", /zip|postal/i))}</select></div>` +
         `<button class="apply-btn" onclick="ldProceed()">Proceed →</button>` +
       `</div>`;
     window._ldPendingRows = rows.slice(1);
@@ -1394,22 +1406,37 @@
   }
 
   window.ldProceed = function () {
-    const ni = +document.getElementById("ldMapName").value;
-    const di = +document.getElementById("ldMapDegree").value;
-    const ai = +document.getElementById("ldMapAddress").value;
+    const colMap = {
+      lastIdx:   +document.getElementById("ldMapLast").value,
+      firstIdx:  +document.getElementById("ldMapFirst").value,
+      degreeIdx: +document.getElementById("ldMapDegree").value,
+      streetIdx: +document.getElementById("ldMapStreet").value,
+      cityIdx:   +document.getElementById("ldMapCity").value,
+      stateIdx:  +document.getElementById("ldMapState").value,
+      zipIdx:    +document.getElementById("ldMapZip").value,
+    };
     document.getElementById("ldOutput").innerHTML = "";
-    startLdLookup(window._ldPendingRows, ni, di, ai, window._ldAlertBox);
+    startLdLookup(window._ldPendingRows, colMap, window._ldAlertBox);
   };
 
-  async function startLdLookup(dataRows, nameIdx, degreeIdx, addressIdx, alertBox) {
+  async function startLdLookup(dataRows, colMap, alertBox) {
     const output = document.getElementById("ldOutput");
     const students = dataRows
       .filter(r => Array.isArray(r) && r.some(c => String(c).trim()))
-      .map(r => ({
-        name:    String(r[nameIdx]    ?? "").trim(),
-        degree:  String(r[degreeIdx]  ?? "").trim(),
-        address: String(r[addressIdx] ?? "").trim(),
-      }))
+      .map(r => {
+        const first    = String(r[colMap.firstIdx]  ?? "").trim();
+        const last     = String(r[colMap.lastIdx]   ?? "").trim();
+        const street   = String(r[colMap.streetIdx] ?? "").trim();
+        const city     = String(r[colMap.cityIdx]   ?? "").trim();
+        const state    = String(r[colMap.stateIdx]  ?? "").trim();
+        const zip      = String(r[colMap.zipIdx]    ?? "").trim();
+        const stateZip = [state, zip].filter(Boolean).join(" ");
+        return {
+          name:    [first, last].filter(Boolean).join(" "),
+          degree:  String(r[colMap.degreeIdx] ?? "").trim(),
+          address: [street, city, stateZip].filter(Boolean).join(", "),
+        };
+      })
       .filter(s => s.name || s.address);
 
     const total = students.length;
