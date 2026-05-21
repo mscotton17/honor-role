@@ -314,6 +314,28 @@
     }
     .pr-dl-row .dl-btn { margin-top: 0; }
 
+    /* Legislative District Export */
+    .ld-progress { margin-top: .75rem; font-size: .875rem; color: var(--text-muted); }
+    .ld-progress-bar {
+      height: 6px; background: var(--border); border-radius: 3px;
+      margin-top: .4rem; overflow: hidden;
+    }
+    .ld-progress-bar-fill {
+      height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s;
+    }
+    .ld-map-row {
+      display: flex; align-items: center; gap: .65rem;
+      margin-bottom: .5rem; flex-wrap: wrap;
+    }
+    .ld-map-label { flex: 0 0 80px; font-size: .875rem; color: var(--text-body); font-weight: 600; }
+    .ld-map-select {
+      flex: 1; min-width: 0; padding: .4rem .65rem;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border-mid); border-radius: 6px; font-size: .875rem;
+    }
+    .ld-map-select:focus { outline: none; border-color: var(--accent); }
+    .ld-summary { margin-top: .75rem; font-size: .875rem; color: var(--text-muted); margin-bottom: .5rem; }
+
     .pr-info-row {
       display: flex;
       gap: .65rem;
@@ -392,6 +414,20 @@
     </div>
     <div class="alert" id="alert3"></div>
   </div>
+
+  <!-- Legislative District Export -->
+  <div class="upload-section">
+    <div class="section-title">&#x1F3DB;&#xFE0F; Legislative District Export</div>
+    <div class="drop-zone" id="dropZone4">
+      <label for="csvInput4" style="cursor:pointer;display:block;">
+        <span class="upload-icon">&#x1F4C2;</span>
+        <p>Drag &amp; drop a <strong>.csv or .xlsx</strong> file here, or <span>click to browse</span></p>
+        <input type="file" id="csvInput4" accept=".csv,.xlsx" />
+      </label>
+    </div>
+    <div class="alert" id="alert4"></div>
+    <div id="ldOutput"></div>
+  </div>
 </div>
 
 <script>
@@ -403,7 +439,7 @@
     themeToggle.textContent = isDark ? "\uD83C\uDF19 Dark" : "\u2600 Light";
   });
 
-  [1, 2, 3].forEach(n => {
+  [1, 2, 3, 4].forEach(n => {
     const dropZone = document.getElementById(`dropZone${n}`);
     const csvInput = document.getElementById(`csvInput${n}`);
     const alertBox = document.getElementById(`alert${n}`);
@@ -449,6 +485,14 @@
       const reader = new FileReader();
       reader.onload = e => parsePressReleaseTxt(e.target.result, file.name, alertBox);
       reader.readAsText(file);
+      return;
+    }
+    if (zoneNum === 4) {
+      if (!name.endsWith(".csv") && !name.endsWith(".xlsx")) {
+        showAlert(alertBox, "error", "Please upload a .csv or .xlsx file.");
+        return;
+      }
+      parseLdFile(file, alertBox);
       return;
     }
     if (!name.endsWith(".csv")) {
@@ -1271,6 +1315,267 @@
     box.className = `alert ${type} show`;
     box.textContent = msg;
   }
+
+  // ── Legislative District Export ───────────────────────────────────────────
+
+  function parseLdFile(file, alertBox) {
+    const reader = new FileReader();
+    if (file.name.toLowerCase().endsWith(".xlsx")) {
+      reader.onload = e => {
+        const wb   = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        processLdRows(rows, file.name, alertBox);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = e => {
+        // Simple CSV split — handles quoted fields poorly but fine for structured exports
+        const rows = e.target.result.split(/\r?\n/).map(l => l.split(","));
+        processLdRows(rows, file.name, alertBox);
+      };
+      reader.readAsText(file);
+    }
+  }
+
+  function findLdCol(headers, re) {
+    const matches = [];
+    headers.forEach((h, i) => { if (re.test(String(h).trim())) matches.push(i); });
+    return matches.length === 1 ? matches[0] : -1;
+  }
+
+  function processLdRows(rows, filename, alertBox) {
+    if (rows.length < 2) {
+      showAlert(alertBox, "error", "File appears to be empty or has only a header row.");
+      return;
+    }
+    const headers    = rows[0].map(h => String(h).trim());
+    const nameIdx    = findLdCol(headers, /name|student/i);
+    const degreeIdx  = findLdCol(headers, /degree|program|major|credential/i);
+    const addressIdx = findLdCol(headers, /address|addr|street|mailing/i);
+    const needsMap   = nameIdx < 0 || degreeIdx < 0 || addressIdx < 0;
+
+    showAlert(alertBox, "info", `✓ "${filename}" loaded — ${rows.length - 1} rows.`);
+
+    if (needsMap) {
+      renderLdColMap(headers, rows, filename, alertBox, nameIdx, degreeIdx, addressIdx);
+    } else {
+      startLdLookup(rows.slice(1), nameIdx, degreeIdx, addressIdx, alertBox);
+    }
+  }
+
+  function renderLdColMap(headers, rows, filename, alertBox, ni, di, ai) {
+    const output = document.getElementById("ldOutput");
+    function bestGuess(re) {
+      const idx = headers.findIndex(h => re.test(String(h).trim()));
+      return idx >= 0 ? idx : 0;
+    }
+    const defN = ni >= 0 ? ni : bestGuess(/name|student/i);
+    const defD = di >= 0 ? di : bestGuess(/degree|program|major|credential/i);
+    const defA = ai >= 0 ? ai : bestGuess(/address|addr|street|mailing/i);
+    const opts = (sel) => headers.map((h, i) =>
+      `<option value="${i}"${i === sel ? " selected" : ""}>${esc(h || `Column ${i + 1}`)}</option>`
+    ).join("");
+    output.innerHTML =
+      `<div class="conflict-card">` +
+        `<p>Could not auto-detect all columns. Confirm the mapping below:</p>` +
+        `<div class="ld-map-row"><span class="ld-map-label">Name</span>` +
+          `<select class="ld-map-select" id="ldMapName">${opts(defN)}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">Degree(s)</span>` +
+          `<select class="ld-map-select" id="ldMapDegree">${opts(defD)}</select></div>` +
+        `<div class="ld-map-row"><span class="ld-map-label">Address</span>` +
+          `<select class="ld-map-select" id="ldMapAddress">${opts(defA)}</select></div>` +
+        `<button class="apply-btn" onclick="ldProceed()">Proceed →</button>` +
+      `</div>`;
+    window._ldPendingRows = rows.slice(1);
+    window._ldAlertBox    = alertBox;
+  }
+
+  window.ldProceed = function () {
+    const ni = +document.getElementById("ldMapName").value;
+    const di = +document.getElementById("ldMapDegree").value;
+    const ai = +document.getElementById("ldMapAddress").value;
+    document.getElementById("ldOutput").innerHTML = "";
+    startLdLookup(window._ldPendingRows, ni, di, ai, window._ldAlertBox);
+  };
+
+  async function startLdLookup(dataRows, nameIdx, degreeIdx, addressIdx, alertBox) {
+    const output = document.getElementById("ldOutput");
+    const students = dataRows
+      .filter(r => Array.isArray(r) && r.some(c => String(c).trim()))
+      .map(r => ({
+        name:    String(r[nameIdx]    ?? "").trim(),
+        degree:  String(r[degreeIdx]  ?? "").trim(),
+        address: String(r[addressIdx] ?? "").trim(),
+      }))
+      .filter(s => s.name || s.address);
+
+    const total = students.length;
+    if (!total) {
+      showAlert(alertBox, "error", "No student rows found after applying column mapping.");
+      return;
+    }
+
+    output.innerHTML =
+      `<div class="ld-progress">` +
+        `<span id="ldProgressText">Looking up districts… 0 / ${total}</span>` +
+        `<div class="ld-progress-bar"><div class="ld-progress-bar-fill" id="ldProgressFill" style="width:0%"></div></div>` +
+      `</div>`;
+
+    const CONCURRENCY = 5;
+    const results = new Array(total).fill(null);
+    for (let i = 0; i < total; i += CONCURRENCY) {
+      const batch = students.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(batch.map(s => lookupLdDistrict(s.address)));
+      batchResults.forEach((r, j) => { results[i + j] = r; });
+      const done = Math.min(i + CONCURRENCY, total);
+      const pct  = Math.round(done / total * 100);
+      const pText = document.getElementById("ldProgressText");
+      const pFill = document.getElementById("ldProgressFill");
+      if (pText) pText.textContent = `Looking up districts… ${done} / ${total}`;
+      if (pFill) pFill.style.width = `${pct}%`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    const districtMap = new Map();
+    const unmatched   = [];
+    const matchedSet  = new Set();
+
+    students.forEach((s, i) => {
+      const r = results[i];
+      if (!r || (!r.house && !r.senate)) {
+        unmatched.push({ ...s, idx: i });
+        return;
+      }
+      matchedSet.add(i);
+      if (r.house) {
+        const key = `House District ${r.house}`;
+        if (!districtMap.has(key)) districtMap.set(key, []);
+        districtMap.get(key).push(s);
+      }
+      if (r.senate) {
+        const key = `Senate District ${r.senate}`;
+        if (!districtMap.has(key)) districtMap.set(key, []);
+        districtMap.get(key).push(s);
+      }
+    });
+
+    window._ldDistrictMap = districtMap;
+    window._ldUnmatched   = unmatched;
+    renderLdResults(districtMap, unmatched, matchedSet.size, alertBox);
+  }
+
+  async function lookupLdDistrict(address) {
+    if (!address) return null;
+    try {
+      const url  = `https://api.oregonlegislature.gov/odata/odataservice.svc/DistrictsByAddress?address='${encodeURIComponent(address)}'`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) return null;
+      const data  = await resp.json();
+      const items = data?.d?.results ?? data?.value ?? [];
+      if (!items.length) return null;
+      let house = null, senate = null;
+      for (const item of items) {
+        const type = String(item.DistrictType ?? "").toLowerCase();
+        const num  = item.DistrictNumber ?? item.DistrictNum ?? item.District ?? null;
+        if (type === "house"  && num != null) house  = num;
+        if (type === "senate" && num != null) senate = num;
+      }
+      if (!house  && items[0]?.HouseDistrict  != null) house  = items[0].HouseDistrict;
+      if (!senate && items[0]?.SenateDistrict != null) senate = items[0].SenateDistrict;
+      return (house != null || senate != null) ? { house, senate } : null;
+    } catch { return null; }
+  }
+
+  function renderLdResults(districtMap, unmatched, matchedCount, alertBox) {
+    const output     = document.getElementById("ldOutput");
+    const distCount  = districtMap.size;
+
+    let html = `<div class="ld-summary">` +
+      `${matchedCount} student${matchedCount !== 1 ? "s" : ""} matched across ${distCount} district${distCount !== 1 ? "s" : ""}` +
+      (unmatched.length ? `, ${unmatched.length} unmatched` : "") +
+      `.</div>`;
+
+    if (unmatched.length) {
+      html +=
+        `<div class="conflicts-wrap show">` +
+          `<h2>⚠ ${unmatched.length} student${unmatched.length !== 1 ? "s" : ""} could not be matched — enter districts manually or leave blank to put in "Unmatched" tab</h2>`;
+      unmatched.forEach((s, i) => {
+        html +=
+          `<div class="conflict-card">` +
+            `<p><strong>${esc(s.name)}</strong>${s.degree ? ` — <em>${esc(s.degree)}</em>` : ""}</p>` +
+            `<p style="font-size:.8rem;margin-bottom:.5rem;">${esc(s.address)}</p>` +
+            `<div class="ld-map-row">` +
+              `<span class="ld-map-label">House</span>` +
+              `<input class="city-input" id="ldUnmH${i}" placeholder="House District # (e.g. 17)" />` +
+            `</div>` +
+            `<div class="ld-map-row">` +
+              `<span class="ld-map-label">Senate</span>` +
+              `<input class="city-input" id="ldUnmS${i}" placeholder="Senate District # (e.g. 8)" />` +
+            `</div>` +
+          `</div>`;
+      });
+      html += `</div>`;
+    }
+
+    html += `<button class="dl-btn" onclick="downloadLdXlsx()">⬇ Download District Export .xlsx</button>`;
+    output.innerHTML = html;
+  }
+
+  window.downloadLdXlsx = function () {
+    const districtMap = new Map(window._ldDistrictMap);
+    const unmatched   = window._ldUnmatched || [];
+
+    // Merge manual entries for unmatched students
+    unmatched.forEach((s, i) => {
+      const h  = document.getElementById(`ldUnmH${i}`)?.value.trim();
+      const sn = document.getElementById(`ldUnmS${i}`)?.value.trim();
+      if (h) {
+        const key = `House District ${h}`;
+        if (!districtMap.has(key)) districtMap.set(key, []);
+        districtMap.get(key).push(s);
+      }
+      if (sn) {
+        const key = `Senate District ${sn}`;
+        if (!districtMap.has(key)) districtMap.set(key, []);
+        districtMap.get(key).push(s);
+      }
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    // Sort: House districts numerically, then Senate numerically
+    const sortedKeys = [...districtMap.keys()].sort((a, b) => {
+      const aH = a.startsWith("House"), bH = b.startsWith("House");
+      if (aH !== bH) return aH ? -1 : 1;
+      return parseInt(a.replace(/\D/g, ""), 10) - parseInt(b.replace(/\D/g, ""), 10);
+    });
+
+    sortedKeys.forEach(key => {
+      const sorted = districtMap.get(key)
+        .slice()
+        .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+      const wsData = [["Name", "Degree(s)", "Address"],
+        ...sorted.map(s => [s.name, s.degree, s.address])];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      XLSX.utils.book_append_sheet(wb, ws, key.substring(0, 31));
+    });
+
+    // Unmatched tab — only students who still have no district assigned
+    const stillUnmatched = unmatched.filter((s, i) => {
+      const h  = document.getElementById(`ldUnmH${i}`)?.value.trim();
+      const sn = document.getElementById(`ldUnmS${i}`)?.value.trim();
+      return !h && !sn;
+    });
+    if (stillUnmatched.length) {
+      const wsData = [["Name", "Degree(s)", "Address"],
+        ...stillUnmatched.map(s => [s.name, s.degree, s.address])];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), "Unmatched");
+    }
+
+    XLSX.writeFile(wb, "Legislative_Districts.xlsx");
+  };
+
 })();
 </script>
 </body>
