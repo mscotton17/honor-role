@@ -863,7 +863,8 @@
   }
 
   function prFinalize(cities) {
-    window._pressReleaseData = cities;
+    const sorted = [...cities].sort((a, b) => a.city.localeCompare(b.city, undefined, { sensitivity: "base" }));
+    window._pressReleaseData = sorted;
     document.getElementById("pressReleaseOutput").innerHTML =
       `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
   }
