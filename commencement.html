@@ -1462,27 +1462,69 @@
 
     window._ldDistrictMap = districtMap;
     window._ldUnmatched   = unmatched;
+
+    // Warn if the vast majority of lookups failed (likely an API outage)
+    const nullCount = results.filter(r => r === null).length;
+    if (total > 0 && nullCount / total > 0.8) {
+      showAlert(alertBox, "error",
+        "Most lookups failed. The district API may be unavailable — you can enter districts manually below.");
+    }
+
     renderLdResults(districtMap, unmatched, matchedSet.size, alertBox);
   }
 
   async function lookupLdDistrict(address) {
     if (!address) return null;
+
+    // Attempt 1: Oregon Legislature API
     try {
       const url  = `https://api.oregonlegislature.gov/odata/odataservice.svc/DistrictsByAddress?address='${encodeURIComponent(address)}'`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (resp.ok) {
+        const data  = await resp.json();
+        const items = data?.d?.results ?? data?.value ?? [];
+        if (items.length) {
+          let house = null, senate = null;
+          for (const item of items) {
+            const type = String(item.DistrictType ?? "").toLowerCase();
+            const num  = item.DistrictNumber ?? item.DistrictNum ?? item.District ?? null;
+            if (type === "house"  && num != null) house  = num;
+            if (type === "senate" && num != null) senate = num;
+          }
+          if (!house  && items[0]?.HouseDistrict  != null) house  = items[0].HouseDistrict;
+          if (!senate && items[0]?.SenateDistrict != null) senate = items[0].SenateDistrict;
+          if (house != null || senate != null) return { house, senate };
+        }
+      }
+    } catch { /* fall through to Census fallback */ }
+
+    // Attempt 2: U.S. Census Bureau geocoder → state legislative districts
+    try {
+      const layers = "State Legislative Districts - Upper,State Legislative Districts - Lower";
+      const url = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress" +
+        `?address=${encodeURIComponent(address)}` +
+        "&benchmark=Public_AR_Current&vintage=Current_Current" +
+        `&layers=${encodeURIComponent(layers)}&format=json`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
       if (!resp.ok) return null;
       const data  = await resp.json();
-      const items = data?.d?.results ?? data?.value ?? [];
-      if (!items.length) return null;
-      let house = null, senate = null;
-      for (const item of items) {
-        const type = String(item.DistrictType ?? "").toLowerCase();
-        const num  = item.DistrictNumber ?? item.DistrictNum ?? item.District ?? null;
-        if (type === "house"  && num != null) house  = num;
-        if (type === "senate" && num != null) senate = num;
+      const match = data?.result?.addressMatches?.[0];
+      if (!match) return null;
+      const geos     = match.geographies ?? {};
+      const upperArr = geos["State Legislative Districts - Upper"] ?? [];
+      const lowerArr = geos["State Legislative Districts - Lower"] ?? [];
+
+      function distNum(arr) {
+        if (!arr.length) return null;
+        // DISTRICT field is zero-padded (e.g. "008"); NAME may be "District 8" or just "8"
+        const raw = arr[0].DISTRICT ?? arr[0].NAME ?? null;
+        if (raw == null) return null;
+        const n = parseInt(String(raw).replace(/\D/g, ""), 10);
+        return isNaN(n) ? null : String(n);
       }
-      if (!house  && items[0]?.HouseDistrict  != null) house  = items[0].HouseDistrict;
-      if (!senate && items[0]?.SenateDistrict != null) senate = items[0].SenateDistrict;
+
+      const senate = distNum(upperArr);
+      const house  = distNum(lowerArr);
       return (house != null || senate != null) ? { house, senate } : null;
     } catch { return null; }
   }
