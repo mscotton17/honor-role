@@ -886,9 +886,13 @@
     doc.text("541-514-1054", marginL, y); y += 22;
 
     // Centered bold title
+    const prYear         = document.getElementById("prYear").value.trim();
+    const prGradDate     = document.getElementById("prGradDate").value.trim();
+    const prGradTime     = document.getElementById("prGradTime").value.trim();
+    const ceremonyOrdinal = ordinalSuffix(parseInt(prYear) - 1969);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    ["Linn-Benton Community College", "Congratulates its 56th Graduating Class"].forEach(line => {
+    ["Linn-Benton Community College", `Congratulates its ${ceremonyOrdinal} Graduating Class`].forEach(line => {
       checkPageBreak(22);
       doc.text(line, pageW / 2, y, { align: "center" });
       y += 22;
@@ -898,10 +902,7 @@
     // Body paragraphs
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    const prYear     = document.getElementById("prYear").value.trim();
-    const prGradDate = document.getElementById("prGradDate").value.trim();
-    const prGradTime = document.getElementById("prGradTime").value.trim();
-    const body1 = `ALBANY, Ore. \u2013 Linn-Benton Community College will hold its 56th commencement ceremony on ${prGradDate}, at ${prGradTime} on the Albany campus. The class of ${prYear} features 710 candidates for graduation and LBCC expects to award 918 degrees and certificates to these students.`;
+    const body1 = `ALBANY, Ore. \u2013 Linn-Benton Community College will hold its ${ceremonyOrdinal} commencement ceremony on ${prGradDate}, at ${prGradTime} on the Albany campus. The class of ${prYear} features 710 candidates for graduation and LBCC expects to award 918 degrees and certificates to these students.`;
     const body2 = "Graduates are listed alphabetically under their hometown:";
 
     doc.splitTextToSize(body1, maxW).forEach(line => {
@@ -1017,6 +1018,15 @@
 
   function esc(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function ordinalSuffix(n) {
+    const last2 = n % 100, last1 = n % 10;
+    if (last2 >= 11 && last2 <= 13) return n + "th";
+    if (last1 === 1) return n + "st";
+    if (last1 === 2) return n + "nd";
+    if (last1 === 3) return n + "rd";
+    return n + "th";
   }
 
   function showAlert(box, type, msg) {
