@@ -272,6 +272,14 @@
     }
     .city-input:focus { outline: none; border-color: var(--accent); }
     .city-suggestion { font-size: .8rem; color: var(--text-muted); margin-top: .35rem; }
+    .problem-students {
+      list-style: disc;
+      padding-left: 1.25rem;
+      margin: .35rem 0 .5rem;
+      font-size: .85rem;
+      color: var(--text-body);
+    }
+    .problem-students li { padding: .1rem 0; }
 
     .dl-btn {
       display: inline-block;
@@ -440,7 +448,7 @@
     showAlert(alertBox, "success",
       `\u2713 "${filename}" parsed \u2014 ${total} student${total !== 1 ? "s" : ""} in ${cities.length} cit${cities.length !== 1 ? "ies" : "y"}.`
     );
-    prCheckIncompleteCities(cities);
+    prCheckProblemCities(cities);
   }
 
   // ── Press Release review pipeline ─────────────────────────────────────────
@@ -452,14 +460,25 @@
     return str.trim().split(/\s+/).map(w => w.length === 0 ? w : w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
   }
 
-  // Step 1: incomplete city headers (e.g. "Albany," with no state)
-  function prCheckIncompleteCities(cities) {
+  // Step 1: city headers that need manual correction (missing state, zip code, blank)
+  function prCheckProblemCities(cities) {
     window._prPendingCities = cities;
-    const incomplete = cities
-      .map((c, i) => ({ i, city: c.city }))
-      .filter(({ city }) => /^[^,]+,\s*$/.test(city.trim()));
-    if (incomplete.length) {
-      prRenderIncompleteCities(incomplete, cities);
+    const problems = [];
+    cities.forEach((c, i) => {
+      const raw = c.city.trim();
+      const commaIdx = raw.indexOf(",");
+      const cityPart = (commaIdx !== -1 ? raw.slice(0, commaIdx) : raw).trim();
+      const statePart = commaIdx !== -1 ? raw.slice(commaIdx + 1).trim() : "";
+      if (cityPart === "" && commaIdx !== -1) {
+        problems.push({ i, city: c.city, students: c.students, type: "blank", cityPart, statePart });
+      } else if (/^\d[\d-]*$/.test(cityPart)) {
+        problems.push({ i, city: c.city, students: c.students, type: "zipcode", cityPart, statePart });
+      } else if (commaIdx !== -1 && statePart === "") {
+        problems.push({ i, city: c.city, students: c.students, type: "missing-state", cityPart, statePart });
+      }
+    });
+    if (problems.length) {
+      prRenderProblemCities(problems, cities);
     } else {
       prCheckCityCasing(cities);
     }
@@ -476,25 +495,38 @@
     return null;
   }
 
-  function prRenderIncompleteCities(incomplete, allCities) {
+  function prRenderProblemCities(problems, allCities) {
     const output = document.getElementById("pressReleaseOutput");
-    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Some locations are missing their state — please fill in</h2><div id="prIncompleteCards">`;
-    incomplete.forEach(item => {
-      const prefix = item.city.split(",")[0].trim();
-      const suggestion = prGetCitySuggestion(prefix, allCities);
-      html += `<div class="conflict-card" data-city-index="${item.i}">`;
-      html += `<p>Incomplete location: <strong>${esc(item.city)}</strong></p>`;
-      html += `<input class="city-input" type="text" value="${esc(suggestion || prefix + ", ")}" placeholder="${esc(prefix)}, OR">`;
-      if (suggestion) {
-        html += `<p class="city-suggestion">Suggested based on <strong>${esc(suggestion)}</strong> already in the list</p>`;
+    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Some locations need attention — please fill in</h2><div id="prProblemCards">`;
+    problems.forEach(p => {
+      let desc = "";
+      let defaultVal = "";
+      let placeholder = "e.g. Albany, OR";
+      let suggestion = null;
+      if (p.type === "blank") {
+        desc = "Blank location (just a comma):";
+      } else if (p.type === "zipcode") {
+        desc = `ZIP code instead of city name: <strong>${esc(p.city)}</strong>`;
+        placeholder = p.statePart ? `e.g. Eugene, ${esc(p.statePart)}` : "e.g. Eugene, OR";
+      } else {
+        desc = `Missing state: <strong>${esc(p.city)}</strong>`;
+        suggestion = prGetCitySuggestion(p.cityPart, allCities);
+        defaultVal = suggestion || p.cityPart + ", ";
+        placeholder = p.cityPart + ", OR";
       }
+      const names = p.students.map(s => { const ci = s.indexOf(","); return esc(ci !== -1 ? s.slice(0, ci).trim() : s.trim()); });
+      html += `<div class="conflict-card" data-city-index="${p.i}">`;
+      html += `<p>${desc}</p>`;
+      html += `<ul class="problem-students">${names.map(n => `<li>${n}</li>`).join("")}</ul>`;
+      html += `<input class="city-input" type="text" value="${esc(defaultVal)}" placeholder="${placeholder}">`;
+      if (suggestion) html += `<p class="city-suggestion">Suggested based on <strong>${esc(suggestion)}</strong> already in the list</p>`;
       html += `</div>`;
     });
-    html += `</div><button class="apply-btn" id="prApplyIncompleteBtn">Apply &amp; continue</button></div>`;
+    html += `</div><button class="apply-btn" id="prApplyProblemBtn">Apply &amp; continue</button></div>`;
     output.innerHTML = html;
 
-    document.getElementById("prApplyIncompleteBtn").addEventListener("click", () => {
-      const cards = document.querySelectorAll("#prIncompleteCards .conflict-card");
+    document.getElementById("prApplyProblemBtn").addEventListener("click", () => {
+      const cards = document.querySelectorAll("#prProblemCards .conflict-card");
       const cities2 = window._prPendingCities.map(c => ({ ...c }));
       cards.forEach(card => {
         const idx = parseInt(card.dataset.cityIndex);
