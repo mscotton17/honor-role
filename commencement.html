@@ -453,7 +453,21 @@
   const PR_DEGREE_RE = /,\s*(Associate|Certificate|Science|Arts|General|Applied)/i;
 
   function parsePressReleaseTxt(text, filename, alertBox) {
-    const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const rawLines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+    // Extract student/degree counts and remove those lines from the content
+    const studentRe = /(\d[\d,]*)\s+students?\b/i;
+    const degreeRe  = /(\d[\d,]*)\s+degrees?\s+and\s+certificates?\b/i;
+    let studentCount = null, degreeCount = null;
+    const lines = rawLines.filter(line => {
+      const s = line.trim();
+      let m;
+      if ((m = s.match(studentRe))) { studentCount = m[1]; return false; }
+      if ((m = s.match(degreeRe)))  { degreeCount  = m[1]; return false; }
+      return true;
+    });
+    window._prStudentCount = studentCount;
+    window._prDegreeCount  = degreeCount;
 
     // Group consecutive non-blank lines into paragraphs
     const paragraphs = [];
@@ -902,7 +916,9 @@
     // Body paragraphs
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    const body1 = `ALBANY, Ore. \u2013 Linn-Benton Community College will hold its ${ceremonyOrdinal} commencement ceremony on ${prGradDate}, at ${prGradTime} on the Albany campus. The class of ${prYear} features 710 candidates for graduation and LBCC expects to award 918 degrees and certificates to these students.`;
+    const studentCount = window._prStudentCount || "710";
+    const degreeCount  = window._prDegreeCount  || "918";
+    const body1 = `ALBANY, Ore. \u2013 Linn-Benton Community College will hold its ${ceremonyOrdinal} commencement ceremony on ${prGradDate}, at ${prGradTime} on the Albany campus. The class of ${prYear} features ${studentCount} candidates for graduation and LBCC expects to award ${degreeCount} degrees and certificates to these students.`;
     const body2 = "Graduates are listed alphabetically under their hometown:";
 
     doc.splitTextToSize(body1, maxW).forEach(line => {
