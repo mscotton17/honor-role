@@ -863,7 +863,19 @@
   }
 
   function prFinalize(cities) {
-    const sorted = [...cities].sort((a, b) => a.city.localeCompare(b.city, undefined, { sensitivity: "base" }));
+    // Merge any entries that share the same city name (case-insensitive)
+    const mergeMap = new Map();
+    const merged = [];
+    for (const c of cities) {
+      const key = c.city.toLowerCase().trim();
+      if (mergeMap.has(key)) {
+        merged[mergeMap.get(key)].students.push(...c.students);
+      } else {
+        mergeMap.set(key, merged.length);
+        merged.push({ city: c.city, students: [...c.students] });
+      }
+    }
+    const sorted = merged.sort((a, b) => a.city.localeCompare(b.city, undefined, { sensitivity: "base" }));
     window._pressReleaseData = sorted;
     document.getElementById("pressReleaseOutput").innerHTML =
       `<button class="dl-btn" onclick="generatePressReleasePdf()">&#x2B07; Download Press Release PDF</button>`;
