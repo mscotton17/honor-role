@@ -280,6 +280,14 @@
       color: var(--text-body);
     }
     .problem-students li { padding: .1rem 0; }
+    .per-student-row {
+      display: flex; align-items: center; gap: .65rem;
+      margin-bottom: .5rem;
+    }
+    .per-student-name { flex: 1; font-size: .875rem; color: var(--text-body); min-width: 0; }
+    .per-student-degree { color: var(--text-muted); font-weight: 400; }
+    .per-student-city { flex: 0 0 180px; }
+    @media (max-width: 540px) { .per-student-row { flex-direction: column; align-items: stretch; } .per-student-city { flex: none; width: 100%; } }
 
     .dl-btn {
       display: inline-block;
@@ -527,13 +535,67 @@
 
     document.getElementById("prApplyProblemBtn").addEventListener("click", () => {
       const cards = document.querySelectorAll("#prProblemCards .conflict-card");
-      const cities2 = window._prPendingCities.map(c => ({ ...c }));
+      const cities2 = window._prPendingCities.map(c => ({ ...c, students: [...c.students] }));
+      const multiStudentFixes = [];
       cards.forEach(card => {
         const idx = parseInt(card.dataset.cityIndex);
         const val = card.querySelector(".city-input").value.trim();
-        if (val) cities2[idx] = { ...cities2[idx], city: val };
+        if (!val) return;
+        cities2[idx] = { ...cities2[idx], city: val };
+        if (cities2[idx].students.length > 1) {
+          multiStudentFixes.push({ cityIndex: idx, newCity: val, students: [...cities2[idx].students] });
+        }
       });
-      prCheckCityCasing(cities2);
+      if (multiStudentFixes.length) {
+        prPerStudentAssign(multiStudentFixes, cities2);
+      } else {
+        prCheckCityCasing(cities2);
+      }
+    });
+  }
+
+  // Step 1b: per-student city assignment for multi-student problem locations
+  function prPerStudentAssign(fixes, baseCities) {
+    window._prPendingCities = baseCities;
+    window._prPerStudentFixes = fixes;
+    const output = document.getElementById("pressReleaseOutput");
+    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Multiple students share the same location — confirm or assign individually</h2><div id="prPerStudentCards">`;
+    fixes.forEach((fix, fi) => {
+      html += `<div class="conflict-card" data-fix-index="${fi}">`;
+      html += `<p>Location confirmed as: <strong>${esc(fix.newCity)}</strong></p>`;
+      fix.students.forEach((student, si) => {
+        const commaIdx = student.indexOf(",");
+        const namePart  = esc(commaIdx !== -1 ? student.slice(0, commaIdx).trim() : student.trim());
+        const degreePart = commaIdx !== -1 ? esc(student.slice(commaIdx + 1).trim()) : "";
+        html += `<div class="per-student-row">`;
+        html += `<div class="per-student-name"><strong>${namePart}</strong>${degreePart ? `<span class="per-student-degree">, ${degreePart}</span>` : ""}</div>`;
+        html += `<input class="city-input per-student-city" type="text" value="${esc(fix.newCity)}" data-fix-index="${fi}" data-student-index="${si}">`;
+        html += `</div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</div><button class="apply-btn" id="prApplyPerStudentBtn">Confirm &amp; continue</button></div>`;
+    output.innerHTML = html;
+
+    document.getElementById("prApplyPerStudentBtn").addEventListener("click", () => {
+      const fixes2 = window._prPerStudentFixes;
+      const cities2 = window._prPendingCities;
+      // Rebuild cities: expand each multi-student entry in-place by its per-student assignments
+      const result = [];
+      for (let i = 0; i < cities2.length; i++) {
+        const fix = fixes2.find(f => f.cityIndex === i);
+        if (!fix) { result.push(cities2[i]); continue; }
+        // Group students by their individually assigned city
+        const inputs = document.querySelectorAll(`.per-student-city[data-fix-index="${fixes2.indexOf(fix)}"]`);
+        const grouped = new Map();
+        fix.students.forEach((student, si) => {
+          const city = (inputs[si]?.value.trim()) || fix.newCity;
+          if (!grouped.has(city)) grouped.set(city, []);
+          grouped.get(city).push(student);
+        });
+        for (const [city, students] of grouped) result.push({ city, students });
+      }
+      prCheckCityCasing(result);
     });
   }
 
