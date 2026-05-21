@@ -468,6 +468,8 @@
         const workbook = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
         if (zoneNum === 1) {
           processProgramXlsx(workbook, file.name, alertBox);
+        } else if (zoneNum === 4) {
+          parseLdFile(file, alertBox);
         } else {
           showAlert(alertBox, "success", `\u2713 "${file.name}" uploaded successfully.`);
         }
