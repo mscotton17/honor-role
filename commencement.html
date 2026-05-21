@@ -461,7 +461,7 @@
     if (incomplete.length) {
       prRenderIncompleteCities(incomplete, cities);
     } else {
-      prReviewAndFinalize(cities);
+      prCheckCityCasing(cities);
     }
   }
 
@@ -501,11 +501,58 @@
         const val = card.querySelector(".city-input").value.trim();
         if (val) cities2[idx] = { ...cities2[idx], city: val };
       });
+      prCheckCityCasing(cities2);
+    });
+  }
+
+  // Step 2: city name casing (e.g. "MILWAUKEE, WI" or "ben lomond, CA")
+  function prCheckCityCasing(cities) {
+    window._prPendingCities = cities;
+    const flagged = cities.map((c, i) => {
+      const commaIdx = c.city.indexOf(",");
+      const cityPart = (commaIdx !== -1 ? c.city.slice(0, commaIdx) : c.city).trim();
+      const statePart = commaIdx !== -1 ? c.city.slice(commaIdx) : "";
+      if (!isTitleCase(cityPart)) {
+        return { i, city: c.city, suggested: toTitleCase(cityPart) + statePart };
+      }
+      return null;
+    }).filter(Boolean);
+
+    if (flagged.length) {
+      prRenderCityCasing(flagged);
+    } else {
+      prReviewAndFinalize(cities);
+    }
+  }
+
+  function prRenderCityCasing(flagged) {
+    const output = document.getElementById("pressReleaseOutput");
+    let html = `<div class="conflicts-wrap show"><h2>&#x26A0; Some location names may not be in title case — please review</h2><div id="prCasingCards">`;
+    flagged.forEach((f, fi) => {
+      html += `<div class="conflict-card" data-city-index="${f.i}">`;
+      html += `<p>Original: <strong>${esc(f.city)}</strong></p>`;
+      html += `<div class="conflict-options">`;
+      html += `<label><input type="radio" name="prcc_${fi}" value="suggested" checked><span>${esc(f.suggested)}</span><span class="badge">title case</span></label>`;
+      html += `<label><input type="radio" name="prcc_${fi}" value="original"><span>${esc(f.city)}</span><span class="badge">keep original</span></label>`;
+      html += `</div></div>`;
+    });
+    html += `</div><button class="apply-btn" id="prApplyCasingBtn">Apply selections &amp; continue</button></div>`;
+    output.innerHTML = html;
+
+    document.getElementById("prApplyCasingBtn").addEventListener("click", () => {
+      const cards = document.querySelectorAll("#prCasingCards .conflict-card");
+      const cities2 = window._prPendingCities.map(c => ({ ...c }));
+      cards.forEach((card, fi) => {
+        const checked = card.querySelector(`input[name="prcc_${fi}"]:checked`);
+        if (!checked || checked.value === "original") return;
+        const idx = parseInt(card.dataset.cityIndex);
+        cities2[idx] = { ...cities2[idx], city: flagged[fi].suggested };
+      });
       prReviewAndFinalize(cities2);
     });
   }
 
-  // Step 2: city spelling conflicts
+  // Step 3: city spelling conflicts
   function prReviewAndFinalize(cities) {
     window._prPendingCities = cities;
     const conflicts = prDetectCityConflicts(cities);
