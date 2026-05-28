@@ -1320,6 +1320,65 @@
 
   // ── Legislative District Export ───────────────────────────────────────────
 
+  // GeoJSON cache — loaded once at startup
+  const _ldGeo = { house: null, senate: null, _promise: null };
+
+  async function ensureLdGeoJson() {
+    if (_ldGeo.house && _ldGeo.senate) return true;
+    if (_ldGeo._promise) return _ldGeo._promise;
+    _ldGeo._promise = (async () => {
+      try {
+        const [hResp, sResp] = await Promise.all([
+          fetch("House_Districts.geojson"),
+          fetch("Senate_Districts.geojson"),
+        ]);
+        if (!hResp.ok || !sResp.ok) return false;
+        _ldGeo.house  = await hResp.json();
+        _ldGeo.senate = await sResp.json();
+        return true;
+      } catch { return false; }
+    })();
+    return _ldGeo._promise;
+  }
+  ensureLdGeoJson(); // preload in background
+
+  function _pipRing(point, ring) {
+    const [px, py] = point;
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if (((yi > py) !== (yj > py)) &&
+          (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function _pointInFeature(lngLat, feature) {
+    const geom = feature.geometry;
+    if (!geom) return false;
+    if (geom.type === "Polygon")      return _pipRing(lngLat, geom.coordinates[0]);
+    if (geom.type === "MultiPolygon") return geom.coordinates.some(poly => _pipRing(lngLat, poly[0]));
+    return false;
+  }
+
+  function _districtNum(feature) {
+    const p   = feature.properties ?? {};
+    const raw = p.dist_num ?? p.DISTRICT ?? p.District ?? p.NAME ?? p.name ?? null;
+    if (raw == null) return null;
+    const n = parseInt(String(raw).replace(/\D/g, ""), 10);
+    return isNaN(n) ? String(raw) : String(n);
+  }
+
+  function _findDistrict(lngLat, geojson) {
+    if (!geojson?.features) return null;
+    for (const feature of geojson.features) {
+      if (_pointInFeature(lngLat, feature)) return _districtNum(feature);
+    }
+    return null;
+  }
+
   function parseLdFile(file, alertBox) {
     const reader = new FileReader();
     if (file.name.toLowerCase().endsWith(".xlsx")) {
@@ -1445,6 +1504,14 @@
       return;
     }
 
+    const geoReady = await ensureLdGeoJson();
+    if (!geoReady) {
+      showAlert(alertBox, "error",
+        "Could not load district boundary files. Make sure House_Districts.geojson and " +
+        "Senate_Districts.geojson are in the same folder as this page.");
+      return;
+    }
+
     output.innerHTML =
       `<div class="ld-progress">` +
         `<span id="ldProgressText">Looking up districts… 0 / ${total}</span>` +
@@ -1504,24 +1571,18 @@
 
   async function lookupLdDistrict(address) {
     if (!address) return null;
-    const API_KEY = "AIzaSyB5sli2c3dSOVgY7QQn-Bt_9SwgIwGUBec";
+    const GMAPS_KEY = "AIzaSyAL-wRw8BaxDtZ8DyGuInTjGsLY5sZhaKU";
     try {
-      const url = `https://www.googleapis.com/civicinfo/v2/representatives` +
-        `?address=${encodeURIComponent(address)}` +
-        `&levels=administrativeArea1` +
-        `&roles=legislatorLowerBody&roles=legislatorUpperBody` +
-        `&key=${API_KEY}`;
+      const url  = `https://maps.googleapis.com/maps/api/geocode/json` +
+        `?address=${encodeURIComponent(address)}&key=${GMAPS_KEY}`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
       if (!resp.ok) return null;
       const data = await resp.json();
-      const divisions = data.divisions ?? {};
-      let house = null, senate = null;
-      for (const key of Object.keys(divisions)) {
-        const m = key.match(/sldl:(\d+)/);
-        if (m) house = m[1];
-        const s = key.match(/sldu:(\d+)/);
-        if (s) senate = s[1];
-      }
+      const loc  = data?.results?.[0]?.geometry?.location;
+      if (!loc) return null;
+      const lngLat = [loc.lng, loc.lat];
+      const house  = _findDistrict(lngLat, _ldGeo.house);
+      const senate = _findDistrict(lngLat, _ldGeo.senate);
       return (house || senate) ? { house, senate } : null;
     } catch { return null; }
   }
