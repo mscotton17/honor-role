@@ -402,19 +402,6 @@
     <div id="pressReleaseOutput"></div>
   </div>
 
-  <!-- Elected Officials List -->
-  <div class="upload-section">
-    <div class="section-title">&#x1F3DB; Elected Officials List</div>
-    <div class="drop-zone" id="dropZone3">
-      <label for="csvInput3" style="cursor:pointer;display:block;">
-        <span class="upload-icon">&#x1F4C2;</span>
-        <p>Drag &amp; drop a <strong>.csv</strong> file here, or <span>click to browse</span></p>
-        <input type="file" id="csvInput3" accept=".csv,.xlsx" />
-      </label>
-    </div>
-    <div class="alert" id="alert3"></div>
-  </div>
-
   <!-- Legislative District Export -->
   <div class="upload-section">
     <div class="section-title">&#x1F3DB;&#xFE0F; Legislative District Export</div>
@@ -439,7 +426,7 @@
     themeToggle.textContent = isDark ? "\uD83C\uDF19 Dark" : "\u2600 Light";
   });
 
-  [1, 2, 3, 4].forEach(n => {
+  [1, 2, 4].forEach(n => {
     const dropZone = document.getElementById(`dropZone${n}`);
     const csvInput = document.getElementById(`csvInput${n}`);
     const alertBox = document.getElementById(`alert${n}`);
