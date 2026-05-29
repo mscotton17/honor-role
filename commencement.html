@@ -1654,7 +1654,7 @@
     sortedKeys.forEach(key => {
       const sorted = districtMap.get(key)
         .slice()
-        .sort((a, b) => lastName(a.name).localeCompare(lastName(b.name)));
+        .sort((a, b) => lastNameKey(a.name).localeCompare(lastNameKey(b.name)));
       const wsData = [["Name", "Degree(s)", "Address"],
         ...sorted.map(s => [s.name, s.degree, s.address])];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
